@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>How it works · product tour</title>
+<!-- Source of docs/img/tour.gif. Rendered frame by frame by docs/media/render.py:
+     the page exposes DURATION (ms) and render(t), and draws the state at time t with no CSS
+     transitions, so every frame is exact. Open it in a browser with #play to watch it live. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+:root{--coral:#FF444F;--slate:#181C25;--ink:#F5F6F8;--muted:#A3AAB8;--faint:#5E6575;--line:#2B303C;--panel:#1E222C}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:960px;height:540px;overflow:hidden;background:var(--slate);color:var(--ink);
+  font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+#stage{position:relative;width:960px;height:540px;overflow:hidden;
+  background:radial-gradient(520px 340px at 18% 30%,rgba(255,68,79,.06),transparent 70%),
+             radial-gradient(1px 1px at 1px 1px,rgba(255,255,255,.055) 1px,transparent 1.5px) 0 0/22px 22px,
+             linear-gradient(180deg,#1A1E28,#14171F)}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+.caps{font-size:7.5px;letter-spacing:.22em;text-transform:uppercase;font-weight:600}
+
+/* chrome */
+#brand{position:absolute;left:44px;top:24px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700;letter-spacing:-.01em}
+#brand .logo{width:20px;height:20px}
+#brand .name{color:var(--coral)}
+#tag{position:absolute;right:44px;top:31px;color:var(--muted)}
+#tag:before{content:"";display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--coral);margin-right:7px;vertical-align:1px}
+#foot{position:absolute;left:44px;right:44px;bottom:26px;display:flex;align-items:center;gap:16px;color:var(--muted)}
+#bar{flex:1;display:flex;gap:6px}
+#bar i{flex:1;height:2px;background:var(--line);position:relative;overflow:hidden}
+#bar i b{position:absolute;left:0;top:0;bottom:0;background:var(--coral)}
+#count{font-variant-numeric:tabular-nums}
+
+/* scene layout */
+.scene{position:absolute;inset:0;opacity:0}
+.left{position:absolute;left:44px;top:128px;width:290px}
+.eyebrow{color:var(--coral);display:flex;align-items:center;gap:8px}
+.eyebrow:before{content:"";width:16px;height:1px;background:var(--coral)}
+h1{font-size:35px;line-height:1.04;font-weight:800;letter-spacing:-.035em;margin-top:14px}
+h1 em{font-style:normal;color:var(--coral);display:block}
+.desc{font-size:12px;line-height:1.55;color:var(--muted);margin-top:14px;width:250px}
+.chips{display:flex;gap:6px;margin-top:16px;flex-wrap:wrap}
+.chips span{white-space:nowrap;font-size:8.5px;font-weight:500;color:#C9CED8;border:1px solid var(--line);border-radius:999px;padding:3px 9px;background:rgba(255,255,255,.02)}
+.sig{margin-top:22px;color:var(--faint);display:flex;align-items:center;gap:8px}
+.sig:before{content:"";width:16px;height:1px;background:var(--faint)}
+
+.win{position:absolute;left:356px;top:94px;width:560px;height:336px;border-radius:10px;overflow:hidden;
+  border:1px solid #2F3441;box-shadow:0 10px 26px rgba(0,0,0,.32)}
+.tb{height:24px;background:#232733;display:flex;align-items:center;padding:0 10px;position:relative}
+.tb i{width:7px;height:7px;border-radius:50%;background:#454B59;margin-right:5px}
+.tb span{position:absolute;left:0;right:0;text-align:center;font-size:8.5px;color:#8C93A1;font-weight:500}
+.body{position:absolute;top:24px;left:0;right:0;bottom:0}
+.dark{background:#10131A}
+.light{background:#F6F7F9;color:#181C25}
+.badge{position:absolute;right:52px;top:82px;z-index:5;white-space:nowrap;background:var(--coral);color:#fff;font-size:9.5px;font-weight:600;
+  padding:6px 11px;border-radius:6px;box-shadow:0 4px 10px rgba(255,68,79,.25);display:flex;align-items:center;gap:6px}
+.badge:before{content:"✦";font-size:9px}
+.cap{position:absolute;left:358px;top:442px;color:var(--faint)}
+
+/* terminal */
+.term{padding:18px 20px;font-size:10.5px;line-height:1.75;color:#D5DAE3}
+.term .p{color:var(--coral);font-weight:600}
+.term .o{color:#8C93A1}
+.term .ok{color:#5BD49A}
+.term .bad{color:var(--coral);font-weight:600}
+.term .k{color:#9CC4FF}.term .s{color:#F2C47A}
+.caret{display:inline-block;width:6px;height:12px;background:#D5DAE3;vertical-align:-2px;margin-left:1px}
+.note{position:absolute;right:22px;bottom:20px;white-space:nowrap;font-size:10px;font-weight:600;color:#fff;background:rgba(255,68,79,.14);
+  border:1px solid rgba(255,68,79,.5);border-radius:8px;padding:8px 12px;opacity:0}
+
+/* browser pieces */
+.addr{height:30px;background:#ECEEF2;border-bottom:1px solid #DDE1E7;display:flex;align-items:center;padding:0 12px}
+.addr div{flex:1;height:18px;border-radius:5px;background:#fff;border:1px solid #DDE1E7;font-size:8.5px;color:#5E6575;
+  display:flex;align-items:center;padding:0 8px;gap:6px;white-space:nowrap;overflow:hidden}
+.addr svg{width:8px;height:8px;flex:none}
+.card{position:absolute;left:50%;top:52px;transform:translateX(-50%);width:270px;background:#fff;border:1px solid #E3E6EB;
+  border-radius:12px;box-shadow:0 4px 14px rgba(24,28,37,.07);padding:18px 18px 16px}
+.sso-logo{width:30px;height:30px;border-radius:8px;background:#181C25;color:#fff;font-size:9px;font-weight:800;display:grid;place-items:center;margin:0 auto 10px}
+.card h3{font-size:14px;text-align:center;font-weight:700;letter-spacing:-.01em}
+.card .sub{font-size:9px;color:#6B7280;text-align:center;margin-top:3px}
+.field{margin-top:10px;height:28px;border:1px solid #D9DDE3;border-radius:7px;font-size:10px;display:flex;align-items:center;padding:0 10px;color:#181C25}
+.field.focus{border-color:#181C25;box-shadow:0 0 0 3px rgba(24,28,37,.08)}
+.field .ph{color:#9AA1AE}
+.btn{margin-top:12px;height:30px;border-radius:7px;background:#181C25;color:#fff;font-size:10.5px;font-weight:600;display:grid;place-items:center}
+.done{position:absolute;inset:0;background:#fff;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0}
+.check{width:34px;height:34px;border-radius:50%;background:#E7F7EF;color:#14965A;display:grid;place-items:center;font-size:17px;font-weight:800}
+.done b{font-size:12px;margin-top:9px;white-space:nowrap}.done span{font-size:9px;color:#6B7280;margin-top:3px;white-space:nowrap}
+
+/* allow page */
+.allow{position:absolute;left:50%;top:44px;transform:translateX(-50%);width:300px;background:#fff;border:1px solid #E3E6EB;
+  border-radius:12px;box-shadow:0 4px 14px rgba(24,28,37,.07);padding:16px 18px}
+.pair{display:flex;align-items:center;justify-content:center;gap:9px}
+.tile{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-weight:800;font-size:12px;background:#FFF0F1;color:#E0303B;border:1px solid #FFD5D8}
+.tile.app{background:var(--coral);color:#fff;border-color:var(--coral)}
+.wire{width:40px;height:1.5px;background:repeating-linear-gradient(90deg,#CDD2DA 0 4px,transparent 4px 7px)}
+.allow .eb{font-size:7px;letter-spacing:.14em;text-transform:uppercase;color:#6B7280;text-align:center;font-weight:700;margin-top:9px}
+.allow h3{font-size:12.5px;text-align:center;margin-top:4px;letter-spacing:-.01em}
+.allow dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:8.5px;border:1px solid #E8EBEF;border-radius:8px;padding:8px 10px;margin-top:10px}
+.allow dt{color:#6B7280}.allow dd{color:#181C25}
+.role{display:inline-block;background:#FFF0F1;color:#C9222D;border-radius:99px;padding:0 6px;font-weight:700}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:10px}
+.btns div{height:26px;border-radius:7px;font-size:10px;font-weight:600;display:grid;place-items:center;border:1px solid #DDE1E7}
+.btns .go{background:var(--coral);border-color:var(--coral);color:#fff}
+.toast{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);background:#181C25;color:#fff;font-size:9.5px;font-weight:500;
+  border-radius:8px;padding:8px 13px;opacity:0;white-space:nowrap}
+
+/* pkce */
+.lanes{position:absolute;inset:0;padding:26px 24px}
+.who{white-space:nowrap;font-size:8px;letter-spacing:.16em;text-transform:uppercase;color:#7D8494;font-weight:600}
+.row{display:flex;align-items:center;gap:9px;margin-top:10px;height:42px}
+.chip{height:34px;border-radius:8px;padding:0 11px;display:flex;flex-direction:column;justify-content:center;font-size:9.5px;font-weight:600;
+  border:1px solid #3A4050;background:#171B24;white-space:nowrap}
+.chip small{font-size:7.5px;color:#8C93A1;font-weight:500;margin-top:2px}
+.chip.code{border-color:rgba(255,68,79,.7);background:rgba(255,68,79,.08)}
+.chip.secret{border-color:#E9EDF3}
+.chip.none{border-style:dashed;color:#6E7585}
+.chip.ok{border-color:#3FB57E;background:rgba(63,181,126,.12);color:#7FE0B0}
+.chip.no{border-color:var(--coral);background:rgba(255,68,79,.14);color:#FF7A82}
+.plus,.arr{color:#6E7585;font-size:13px;font-weight:600}
+.srv{height:34px;border-radius:8px;padding:0 11px;display:flex;flex-direction:column;justify-content:center;background:#232836;border:1px solid #3A4050;font-size:9.5px;font-weight:600}
+.srv small{font-size:7.5px;color:#A3AAB8;font-family:"JetBrains Mono",monospace;margin-top:2px}
+.divider{height:1px;background:#262B37;margin:20px 0 16px}
+
+/* timers */
+.timers{position:absolute;inset:0;padding:22px 24px}
+.trow{display:grid;grid-template-columns:150px 1fr;align-items:center;height:52px}
+.tname{font-size:10.5px;font-weight:600;white-space:nowrap}.tname small{display:block;font-size:8px;color:#8C93A1;font-weight:500;margin-top:2px}
+.track{position:relative;height:16px}
+.fill{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.tval{position:absolute;top:1px;font-size:9px;font-weight:600;white-space:nowrap}
+.chain{position:absolute;left:0;top:0;bottom:0;display:flex;gap:3px}
+.chain b{width:32.6px;border-radius:3px;background:rgba(255,68,79,.55);font:600 7px "JetBrains Mono",monospace;color:#fff;display:grid;place-items:center}
+.axis{position:absolute;left:174px;right:24px;bottom:30px;height:1px;background:#3A4050}
+.axis span{position:absolute;top:6px;white-space:nowrap;font-size:7.5px;color:#7D8494;transform:translateX(-50%)}
+.axis span:before{content:"";position:absolute;left:50%;top:-6px;width:1px;height:4px;background:#3A4050}
+
+/* cursor */
+#cursor{position:absolute;left:0;top:0;width:16px;height:20px;z-index:20;opacity:0;pointer-events:none}
+#ring{position:absolute;z-index:19;border:2px solid var(--coral);border-radius:50%;opacity:0;pointer-events:none}
+</style></head>
+<body><div id="stage">
+
+<div id="brand"><svg class="logo" viewBox="0 0 250 250"><rect width="250" height="250" rx="62.5" fill="#FF444F"/><path fill="#fff" d="m156.97 51.47-8.1 45.92h-28.11c-26.22 0-51.22 21.24-55.85 47.47l-1.96 11.16c-4.61 26.22 12.88 47.47 39.11 47.47h23.44c19.11 0 37.32-15.47 40.68-34.58l21.59-122.38-30.81 4.95Zm-19.94 113.1c-1.03 5.9-6.35 10.71-12.25 10.71h-14.24c-11.79 0-19.67-9.57-17.6-21.37l1.23-6.96c2.09-11.79 13.34-21.37 25.12-21.37h24.62l-6.88 39Z"/></svg>
+  <span>Deriv <span class="name" id="pname"></span></span></div>
+<div id="tag" class="caps">MCP without API keys</div>
+
+<!-- 1: one URL -->
+<section class="scene" id="s1">
+  <div class="left"><div class="eyebrow caps">One URL</div><h1>Add one URL.<em>No API keys.</em></h1>
+    <p class="desc">People add the MCP server to their agent. Nothing secret is stored on the laptop.</p>
+    <div class="chips"><span>Claude Code</span><span>Cursor</span><span>Codex</span></div><div class="sig caps">Deriv</div></div>
+  <div class="badge">Nothing secret on the laptop</div>
+  <div class="win"><div class="tb"><i></i><i></i><i></i><span>Terminal</span></div>
+    <div class="body dark"><div class="term mono">
+      <div><span class="p">~ $</span> <span id="t1a"></span><i class="caret" id="c1a"></i></div>
+      <div class="o" id="t1b" style="opacity:0">Added HTTP MCP server my-app to local config</div>
+      <div style="margin-top:8px"><span class="p">~ $</span> <span id="t1c"></span><i class="caret" id="c1c" style="opacity:0"></i></div>
+      <div id="t1d" style="opacity:0">{<br>&nbsp;&nbsp;<span class="k">"my-app"</span>: {<br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="k">"type"</span>: <span class="s">"http"</span>,<br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="k">"url"</span>: <span class="s">"https://mcp.example.com/mcp"</span><br>&nbsp;&nbsp;}<br>}</div>
+    </div><div class="note" id="n1">No key. No token. Just a URL.</div></div></div>
+  <div class="cap caps">Step 1 · add the server</div>
+</section>
+
+<!-- 2: SSO -->
+<section class="scene" id="s2">
+  <div class="left"><div class="eyebrow caps">Your SSO</div><h1>Sign in once.<em>With your SSO.</em></h1>
+    <p class="desc">The agent opens a browser tab. Your existing company sign-in does the checking, MFA included.</p>
+    <div class="chips"><span>SSO</span><span>MFA</span><span>Groups</span></div><div class="sig caps">Deriv</div></div>
+  <div class="badge">Your existing sign-in</div>
+  <div class="win"><div class="tb"><i></i><i></i><i></i><span>portal.example.com</span></div>
+    <div class="body light"><div class="addr"><div><svg viewBox="0 0 10 10"><rect x="2" y="4.5" width="6" height="4.5" rx="1" fill="#5E6575"/><path d="M3.3 4.5V3.4a1.7 1.7 0 013.4 0v1.1" stroke="#5E6575" fill="none"/></svg>https://portal.example.com/connect-agent/authorize?req=eyJhbGciOi…</div></div>
+      <div class="card"><div class="sso-logo">SSO</div><h3>Sign in</h3><div class="sub">Use your company account</div>
+        <div class="field" id="f2a"><span class="ph" id="t2a">Email</span></div>
+        <div class="field" id="f2b"><span class="ph" id="t2b">Password</span></div>
+        <div class="btn" id="b2">Continue</div>
+        <div class="done" id="d2"><div class="check">✓</div><b>Signed in</b><span>alice@example.com · group mcp-user</span></div></div>
+    </div></div>
+  <div class="cap caps">Step 2 · sign in with SSO</div>
+</section>
+
+<!-- 3: Allow -->
+<section class="scene" id="s3">
+  <div class="left"><div class="eyebrow caps">One decision</div><h1>One click.<em>You decide.</em></h1>
+    <p class="desc">See which agent, which role and what it can do. Allow it, or cancel.</p>
+    <div class="chips"><span>Agent</span><span>Role</span><span>14 days max</span></div><div class="sig caps">Deriv</div></div>
+  <div class="badge">Allow once</div>
+  <div class="win"><div class="tb"><i></i><i></i><i></i><span>portal.example.com</span></div>
+    <div class="body light">
+      <div class="allow"><div class="pair"><div class="tile">C</div><div class="wire"></div><div class="tile app">M</div></div>
+        <div class="eb">My App · connect an agent</div><h3>Allow Claude Code to use My App as you?</h3>
+        <dl><dt>Signed in as</dt><dd>alice@example.com</dd><dt>Your role</dt><dd><span class="role">user</span></dd>
+          <dt>Returns to</dt><dd>an app on this computer</dd><dt>Lasts</dt><dd>up to 14 days · revoke any time</dd></dl>
+        <div class="btns"><div>Cancel</div><div class="go" id="b3">Allow</div></div></div>
+      <div class="toast" id="o3">✓ Allowed · returning to Claude Code…</div>
+    </div></div>
+  <div class="cap caps">Step 3 · approve the agent</div>
+</section>
+
+<!-- 4: PKCE -->
+<section class="scene" id="s4">
+  <div class="left"><div class="eyebrow caps">Proof, not secrets</div><h1>Stolen codes.<em>Still useless.</em></h1>
+    <p class="desc">The one-time code travels through the browser. The secret that unlocks it never leaves the agent.</p>
+    <div class="chips"><span>PKCE</span><span>60 s</span><span>Works once</span></div><div class="sig caps">Deriv</div></div>
+  <div class="badge">PKCE built in</div>
+  <div class="win"><div class="tb"><i></i><i></i><i></i><span>Token exchange</span></div>
+    <div class="body dark"><div class="lanes">
+      <div class="who" id="w4a">Your agent</div>
+      <div class="row"><div class="chip code" id="a1">one-time code<small>60 s · from the Allow page</small></div><span class="plus" id="a2">+</span>
+        <div class="chip secret" id="a3">secret<small>never left the laptop</small></div><span class="arr" id="a4">→</span>
+        <div class="srv" id="a5">MCP server<small>secret's hash matches</small></div><span class="arr" id="a6">→</span>
+        <div class="chip ok" id="a7">✓ tokens</div></div>
+      <div class="divider"></div>
+      <div class="who" id="w4b">Someone who copied the URL</div>
+      <div class="row"><div class="chip code" id="b1">one-time code<small>copied from history</small></div><span class="plus" id="b2x">+</span>
+        <div class="chip none" id="b3x">no secret</div><span class="arr" id="b4">→</span>
+        <div class="srv" id="b5">MCP server<small>hash doesn't match</small></div><span class="arr" id="b6">→</span>
+        <div class="chip no" id="b7">✗ refused</div></div>
+    </div></div></div>
+  <div class="cap caps">Step 4 · swap the code for tokens</div>
+</section>
+
+<!-- 5: timers -->
+<section class="scene" id="s5">
+  <div class="left"><div class="eyebrow caps">Short-lived</div><h1>Every credential<em>expires.</em></h1>
+    <p class="desc">Nothing long-lived reaches a laptop. Refresh tokens rotate on every use and the chain ends at 14 days.</p>
+    <div class="chips"><span>60 s</span><span>1 hour</span><span>14 days</span></div><div class="sig caps">Deriv</div></div>
+  <div class="badge">Nothing lives forever</div>
+  <div class="win"><div class="tb"><i></i><i></i><i></i><span>How long each one lives · log scale</span></div>
+    <div class="body dark"><div class="timers">
+      <div class="trow"><div class="tname">Signed note<small>server → Allow page</small></div><div class="track"><div class="fill" id="f5a" style="background:#8C93A1"></div><div class="tval" id="v5a">10 min</div></div></div>
+      <div class="trow"><div class="tname">One-time code<small>Allow page → agent</small></div><div class="track"><div class="fill" id="f5b" style="background:#E9EDF3"></div><div class="tval" id="v5b">60 s · once</div></div></div>
+      <div class="trow"><div class="tname">Access token<small>on every call</small></div><div class="track"><div class="fill" id="f5c" style="background:var(--coral)"></div><div class="tval" id="v5c">1 hour</div></div></div>
+      <div class="trow"><div class="tname">Refresh tokens<small>each used once</small></div><div class="track"><div class="chain" id="f5d"></div><div class="tval" id="v5d" style="right:7px;top:-15px;color:#FF7A82">chain ends at 14 days</div></div></div>
+    </div><div class="axis"><span style="left:15%">1 min</span><span style="left:34%">10 min</span><span style="left:49%">1 h</span><span style="left:76%">1 day</span><span style="left:98%">14 d</span></div></div></div>
+  <div class="cap caps">Step 5 · stay signed in, silently</div>
+</section>
+
+<!-- 6: control -->
+<section class="scene" id="s6">
+  <div class="left"><div class="eyebrow caps">Stay in control</div><h1>Revoke anyone.<em>In one command.</em></h1>
+    <p class="desc">Admins see every connected agent and every tool call, and can cut anyone off at once.</p>
+    <div class="chips"><span>Audit trail</span><span>Revoke</span><span>Roles</span></div><div class="sig caps">Deriv</div></div>
+  <div class="badge">Instant cut-off</div>
+  <div class="win"><div class="tb"><i></i><i></i><i></i><span>Terminal · admin</span></div>
+    <div class="body dark"><div class="term mono">
+      <div><span class="p">$</span> <span id="t6a"></span></div>
+      <div class="o" id="t6b" style="opacity:0">alice@example.com&nbsp;&nbsp;user&nbsp;&nbsp;Claude Code&nbsp;&nbsp;since 17 Nov&nbsp;&nbsp;ends 1 Dec</div>
+      <div class="o" id="t6b2" style="opacity:0">bob@example.com&nbsp;&nbsp;&nbsp;&nbsp;readonly&nbsp;&nbsp;Cursor&nbsp;&nbsp;since 12 Nov&nbsp;&nbsp;ends 26 Nov</div>
+      <div style="margin-top:8px"><span class="p">$</span> <span id="t6c"></span></div>
+      <div class="ok" id="t6d" style="opacity:0">Revoked alice@example.com: 1 agent(s) disconnected.</div>
+      <div style="margin-top:14px" class="o" id="t6e" style="opacity:0">— meanwhile, in Claude Code —</div>
+      <div id="t6f" style="opacity:0">whoami → <span class="bad">401 Unauthorized</span>&nbsp;&nbsp;<span class="o">token refused</span></div>
+    </div></div></div>
+  <div class="cap caps">Step 6 · revoke and audit</div>
+</section>
+
+<div id="ring"></div>
+<svg id="cursor" viewBox="0 0 16 20"><path d="M1 1v15l4-3.6 2.6 5.8 2.6-1.1-2.6-5.7H13z" fill="#fff" stroke="#181C25" stroke-width="1.2" stroke-linejoin="round"/></svg>
+
+<div id="foot" class="caps"><span>How it works</span><div id="bar"></div><span id="count"></span></div>
+</div>
+
+<script>
+const NAME = "Keyfall";          // the project name in the header; change it and re-render
+const SCENE = 5200, N = 6;
+window.DURATION = SCENE * N;
+document.getElementById("pname").textContent = NAME;
+const bar = document.getElementById("bar");
+for (let i = 0; i < N; i++) bar.innerHTML += "<i><b></b></i>";
+const $ = id => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const ease = x => x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+const p = (u, a, b) => ease(clamp((u - a) / (b - a)));
+const show = (id, u, a, d = 250) => { const v = p(u, a, a + d); $(id).style.opacity = v; $(id).style.transform = `translateY(${(1 - v) * 5}px)`; };
+const type = (id, s, u, a, b) => { $(id).textContent = s.slice(0, Math.round(s.length * clamp((u - a) / (b - a)))); };
+const blink = u => (Math.floor(u / 400) % 2 ? 0 : 1);
+
+// cursor: [time, target] keyframes per scene; a target is an element id (its centre) or [x, y]
+const CUR = {
+  2: {k: [[300, [800, 470]], [900, "f2a"], [1750, "f2a"], [1850, "f2b"], [2750, "f2b"], [3000, "b2"]], clicks: [900, 1850, 3000]},
+  3: {k: [[300, [840, 470]], [1500, "b3"], [3200, "b3"]], clicks: [1700]},
+};
+const at = target => {
+  if (Array.isArray(target)) return target;
+  const r = $(target).getBoundingClientRect();
+  return [r.left + r.width * .55, r.top + r.height * .6];
+};
+function cursor(scene, u) {
+  const c = CUR[scene], el = $("cursor"), ring = $("ring");
+  if (!c) { el.style.opacity = 0; ring.style.opacity = 0; return; }
+  const k = c.k.map(([t, target]) => [t, ...at(target)]);
+  let [, x, y] = k[0];
+  for (let i = 0; i < k.length - 1; i++) {
+    if (u >= k[i][0] && u <= k[i + 1][0]) { const e = p(u, k[i][0], k[i + 1][0]); x = k[i][1] + (k[i + 1][1] - k[i][1]) * e; y = k[i][2] + (k[i + 1][2] - k[i][2]) * e; }
+  }
+  if (u > k[k.length - 1][0]) [, x, y] = k[k.length - 1];
+  el.style.opacity = p(u, 150, 450) * (1 - p(u, SCENE - 500, SCENE - 250));
+  el.style.transform = `translate(${x - 1}px,${y - 1}px)`;
+  let r = 0, o = 0;
+  for (const t of c.clicks) { if (u >= t && u < t + 420) { const e = (u - t) / 420; r = 6 + 16 * e; o = 1 - e; } }
+  ring.style.opacity = o; ring.style.width = ring.style.height = 2 * r + "px";
+  ring.style.left = (x - r) + "px"; ring.style.top = (y - r) + "px";
+}
+
+const SCENES = {
+  1(u) {
+    type("t1a", "claude mcp add --transport http my-app https://mcp.example.com/mcp", u, 500, 2000);
+    $("c1a").style.opacity = u < 2150 ? blink(u) : 0;
+    show("t1b", u, 2150);
+    type("t1c", "cat ~/.claude.json | jq .mcpServers", u, 2600, 3200);
+    $("c1c").style.opacity = u > 2500 && u < 3300 ? blink(u) : 0;
+    show("t1d", u, 3350, 300);
+    show("n1", u, 3900, 300);
+  },
+  2(u) {
+    $("f2a").classList.toggle("focus", u >= 900 && u < 1850);
+    $("f2b").classList.toggle("focus", u >= 1850 && u < 3000);
+    if (u >= 950) { $("t2a").className = ""; type("t2a", "alice@example.com", u, 950, 1650); } else { $("t2a").className = "ph"; $("t2a").textContent = "Email"; }
+    if (u >= 1900) { $("t2b").className = ""; $("t2b").textContent = "•".repeat(Math.round(10 * clamp((u - 1900) / 700))); } else { $("t2b").className = "ph"; $("t2b").textContent = "Password"; }
+    $("b2").style.background = u >= 3000 && u < 3250 ? "#2E3442" : "#181C25";
+    show("d2", u, 3350, 300);
+  },
+  3(u) {
+    const pressed = u >= 1700;
+    $("b3").textContent = pressed ? "✓ Allowed" : "Allow";
+    $("b3").style.background = pressed ? "#E0303B" : "";
+    show("o3", u, 2300, 300);
+  },
+  4(u) {
+    [["w4a", 300], ["a1", 450], ["a2", 750], ["a3", 900], ["a4", 1300], ["a5", 1500], ["a6", 2000], ["a7", 2200],
+     ["w4b", 2800], ["b1", 2950], ["b2x", 3200], ["b3x", 3350], ["b4", 3650], ["b5", 3850], ["b6", 4150], ["b7", 4350]]
+      .forEach(([id, t]) => show(id, u, t));
+  },
+  5(u) {
+    const W = 362; // track width in px (same as the axis)
+    [["f5a", "v5a", .34, 400], ["f5b", "v5b", .15, 1100], ["f5c", "v5c", .49, 1800]].forEach(([f, v, frac, t]) => {
+      const e = p(u, t, t + 700); $(f).style.width = (W * frac * e) + "px";
+      $(v).style.left = (W * frac * e + 8) + "px"; $(v).style.opacity = p(u, t + 500, t + 800);
+    });
+    const n = Math.min(10, Math.floor(clamp((u - 2600) / 1400) * 10.999));
+    const labels = ["R1", "R2", "R3", "…", "", "", "", "", "", "Rn"];
+    $("f5d").innerHTML = labels.slice(0, n).map(l => `<b>${l}</b>`).join("");
+    $("v5d").style.opacity = p(u, 3900, 4200);
+  },
+  6(u) {
+    type("t6a", "python admin.py connections", u, 400, 1100);
+    show("t6b", u, 1250); show("t6b2", u, 1350);
+    type("t6c", "python admin.py revoke alice@example.com --by admin@example.com", u, 1900, 3000);
+    show("t6d", u, 3150);
+    show("t6e", u, 3700); show("t6f", u, 3900);
+  },
+};
+
+window.render = function (t) {
+  t = ((t % window.DURATION) + window.DURATION) % window.DURATION;
+  const idx = Math.floor(t / SCENE), u = t - idx * SCENE;
+  for (let i = 0; i < N; i++) {
+    const s = $("s" + (i + 1));
+    if (i !== idx) { s.style.opacity = 0; continue; }
+    const o = p(u, 0, 380) * (1 - p(u, SCENE - 320, SCENE));
+    s.style.opacity = o;
+    const lift = (1 - p(u, 0, 450)) * 10;
+    s.querySelector(".left").style.transform = `translateY(${lift}px)`;
+    s.querySelector(".win").style.transform = `translateY(${lift * .6}px)`;
+    SCENES[i + 1](u);
+  }
+  cursor(idx + 1, u);
+  [...bar.children].forEach((seg, i) => seg.firstChild.style.width = (i < idx ? 100 : i > idx ? 0 : 100 * u / SCENE) + "%");
+  $("count").textContent = `0${idx + 1} / 0${N}`;
+};
+render(0);
+if (location.hash === "#play") { const t0 = performance.now(); const loop = () => { render(performance.now() - t0); requestAnimationFrame(loop); }; loop(); }
+</script>
+</body></html>

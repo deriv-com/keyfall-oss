@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keyfall · MCP without API keys</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  /* Deriv brand */
+  --coral:#FF444F; --slate:#181C25; --faint:#5E6575; --line:#2B303C;
+  --bg:#181C25; --fg:#F5F6F8; --soft:#A3AAB8; --dim:#8C93A1;
+  /* one colour per idea, used on every slide */
+  --yellow:#F5D565;  /* Claude Code's secret (PKCE code_verifier) */
+  --blue:#62B6F7;    /* hash of the secret (PKCE code_challenge) */
+  --purple:#B69CFF;  /* signed note (request token) */
+  --green:#8FD46A;   /* one-time code */
+  --gold:#F59B4C;    /* access / refresh token */
+  --teal:#3FC1A5;    /* the shared signing key */
+  --red:#FF444F;     /* refused, revoked, attacker (coral) */
+  --maroon:#FF9AA0;  /* API key (coral tint) */
+  --grey:#BDB3A3;    /* SSO / identity-aware proxy */
+  --serif:Inter,system-ui,-apple-system,'Segoe UI',sans-serif;  /* name kept; all deck text is Inter */
+  --mono:'JetBrains Mono','SF Mono',Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#101319;overflow:hidden}
+body{font-family:var(--serif);color:var(--fg);cursor:default;user-select:none;-webkit-font-smoothing:antialiased}
+#stage{position:absolute;left:50%;top:50%;width:1600px;height:900px;transform-origin:50% 50%;
+  background:linear-gradient(180deg,#1A1E28,#14171F);overflow:hidden}
+.slide{position:absolute;inset:0;opacity:0;visibility:hidden;transition:opacity .45s ease,visibility 0s linear .45s}
+.slide.active{opacity:1;visibility:visible;transition:opacity .45s ease}
+h2{position:absolute;left:80px;top:62px;margin:0;font:800 54px/1.1 var(--serif);letter-spacing:-.03em;color:var(--fg)}
+h2::before{content:"";position:absolute;left:2px;top:-10px;width:40px;height:3px;border-radius:2px;background:var(--coral)}
+.cap{position:absolute;left:120px;right:120px;top:792px;margin:0;text-align:center;font:400 30px/1.35 var(--serif);letter-spacing:-.005em;color:#DCE0E7;text-wrap:balance}
+.cap.big{top:770px;font-size:50px;font-weight:800;letter-spacing:-.03em;color:var(--fg)}
+svg.art{position:absolute;left:0;top:0;width:1600px;height:900px;overflow:visible}
+#bar{position:absolute;left:0;bottom:0;height:3px;background:var(--coral);width:0;transition:width .4s ease}
+#num{position:absolute;right:28px;bottom:18px;font:600 13px/1 var(--serif);letter-spacing:.2em;color:var(--dim);font-variant-numeric:tabular-nums}
+#brand{position:absolute;left:28px;bottom:14px;display:flex;align-items:center;gap:9px;font:700 17px/1 var(--serif);letter-spacing:-.01em;color:var(--fg);pointer-events:none}
+#brand .logo{width:22px;height:22px;display:block}
+#brand em,.lockup em{font-style:normal;color:var(--coral)}
+
+/* slide 1: title */
+.title{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 120px 30px}
+.lockup{display:flex;align-items:center;gap:14px;font:700 34px/1 var(--serif);letter-spacing:-.01em;color:var(--fg)}
+.lockup .logo{width:46px;height:46px;display:block}
+.title h1{margin:58px 0 0;font:800 104px/1.04 var(--serif);letter-spacing:-.035em;color:var(--fg)}
+.title h1 em{display:block;font-style:normal;color:var(--coral)}
+.title .sub{margin:46px 0 0;font:400 30px/1.35 var(--serif);color:var(--soft)}
+
+/* step engine */
+[data-in],[data-out]{transition:opacity .55s ease var(--dl,0s),transform 1.1s cubic-bezier(.65,0,.35,1) var(--dl,0s),filter .6s ease var(--dl,0s)}
+[data-in]{opacity:0}
+[data-in].on{opacity:1}
+[data-out].past{opacity:0}
+.w[data-in]{filter:blur(6px)}
+.w[data-in].on,.w[data-in].past{filter:blur(0)}
+.cap[data-in]{transform:translateY(12px)}
+.cap[data-in].on{transform:none}
+.cap[data-in].past{transform:translateY(-12px)}
+.d{fill:none;stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset 1s cubic-bezier(.65,0,.35,1) var(--dl,0s),opacity .4s ease var(--dl,0s)}
+.on .d,.d.on,.past .d,.d.past{stroke-dashoffset:0}
+.head{transition:opacity .3s ease}
+.head[data-in].on{transition-delay:calc(var(--dl,0s) + .75s)}
+.grow{transform:scaleX(0);transform-box:fill-box;transform-origin:0 50%;transition:transform 1.2s cubic-bezier(.65,0,.35,1) var(--dl,0s),opacity .5s ease var(--dl,0s)}
+.on .grow,.grow.on,.past .grow{transform:scaleX(1)}
+.mv{transform:translate(var(--x0),var(--y0));opacity:0;transition:transform 1.1s cubic-bezier(.65,0,.35,1) var(--dl,0s),opacity .3s ease var(--dl,0s)}
+.mv.on{transform:translate(var(--x1),var(--y1));opacity:1}
+.mv.past{transform:translate(var(--x1),var(--y1));opacity:0}
+.row.on{opacity:.3}
+.row.on.now{opacity:1}
+#seq.at14 .row.on{opacity:1}
+.instant *,.instant *::before,.instant *::after{transition:none!important;animation:none!important}
+
+/* slide 5: the one server splits in two */
+.srv{transition:transform 1.4s cubic-bezier(.65,0,.35,1)}
+.srvA{transform:translate(1060px,470px)}.srvA.at1{transform:translate(550px,470px)}
+.srvB{transform:translate(1060px,200px)}
+
+/* svg vocabulary */
+.t{font-family:var(--serif);font-size:24px;fill:var(--fg)}
+.t.s{font-size:22px}.t.sl{font-size:20px}.t.xs{font-size:18px}.t.l{font-size:30px}.t.xl{font-size:40px}.t.hero{font-size:104px}
+.mono{font-family:var(--mono);font-size:20px;fill:var(--fg)}
+.mono.s{font-size:16px}.mono.m{font-size:18px}.mono.l{font-size:22px}.mono.xl{font-size:26px}
+.it{font-style:italic}.b{font-weight:700}
+.box{fill:rgba(255,255,255,.035);stroke:#646B7B;stroke-width:2}
+.card{fill:rgba(255,255,255,.03);stroke:#3A4050;stroke-width:1.5}
+.frame{fill:none;stroke:#4A5162;stroke-width:1.6;stroke-dasharray:8 7}
+.sep{stroke:#2F3441;stroke-width:1.5}
+.life{stroke:#363C4A;stroke-width:2;stroke-dasharray:5 8}
+.arr{fill:none;stroke:var(--c,#C9CED8);stroke-width:2.6;stroke-linecap:round}
+.arr.dash{stroke-dasharray:9 8}
+.head{fill:var(--c,#C9CED8)}
+.chip{fill:rgba(255,255,255,.04);stroke:#646B7B;stroke-width:1.6}
+.pill{fill:color-mix(in srgb,var(--c) 18%,var(--bg));stroke:var(--c);stroke-width:2}
+.halo{paint-order:stroke fill;stroke:#181C25;stroke-width:9px;stroke-linejoin:round}
+.ico{color:var(--fg)}
+.dim{fill:var(--dim)}.soft{fill:var(--soft)}
+.c-yellow{fill:var(--yellow);color:var(--yellow)}.c-blue{fill:var(--blue)}.c-purple{fill:var(--purple);color:var(--purple)}
+.c-green{fill:var(--green);color:var(--green)}.c-gold{fill:var(--gold)}.c-teal{fill:var(--teal);color:var(--teal)}
+.c-red{fill:var(--red)}.c-maroon{fill:var(--maroon);color:var(--maroon)}.c-grey{fill:var(--grey)}.c-dark{fill:#181C25}
+.f-gold{fill:var(--gold)}.f-green{fill:var(--green)}.f-purple{fill:var(--purple)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <pattern id="hatch" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="12" height="12" fill="#1E222C"/>
+      <line x1="0" y1="0" x2="0" y2="12" stroke="#BDB3A3" stroke-width="3" stroke-opacity=".45"/>
+    </pattern>
+    <symbol id="deriv-logo" viewBox="0 0 250 250">
+      <rect width="250" height="250" rx="62.5" fill="#FF444F"/>
+      <path fill="#fff" d="m156.97 51.47-8.1 45.92h-28.11c-26.22 0-51.22 21.24-55.85 47.47l-1.96 11.16c-4.61 26.22 12.88 47.47 39.11 47.47h23.44c19.11 0 37.32-15.47 40.68-34.58l21.59-122.38-30.81 4.95Zm-19.94 113.1c-1.03 5.9-6.35 10.71-12.25 10.71h-14.24c-11.79 0-19.67-9.57-17.6-21.37l1.23-6.96c2.09-11.79 13.34-21.37 25.12-21.37h24.62l-6.88 39Z"/>
+    </symbol>
+    <symbol id="key" viewBox="0 0 40 20">
+      <circle cx="9" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="2.6"/>
+      <path d="M15.5 10 H37 M30 10 V16 M35 10 V15" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-person" viewBox="0 0 64 64">
+      <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+        <circle cx="32" cy="21" r="11"/><path d="M11 56 C11 39, 53 39, 53 56"/></g>
+    </symbol>
+    <symbol id="i-agent" viewBox="0 0 64 64">
+      <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+        <rect x="10" y="20" width="44" height="34" rx="9"/><path d="M32 20 V11"/><circle cx="32" cy="8" r="3"/></g>
+      <circle cx="24" cy="37" r="3.6" fill="currentColor"/><circle cx="40" cy="37" r="3.6" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-server" viewBox="0 0 64 64">
+      <g fill="none" stroke="currentColor" stroke-width="3">
+        <rect x="12" y="9" width="40" height="13" rx="3"/><rect x="12" y="26" width="40" height="13" rx="3"/><rect x="12" y="43" width="40" height="13" rx="3"/></g>
+      <circle cx="20" cy="15.5" r="2" fill="currentColor"/><circle cx="20" cy="32.5" r="2" fill="currentColor"/><circle cx="20" cy="49.5" r="2" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-page" viewBox="0 0 64 64">
+      <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+        <rect x="13" y="7" width="38" height="50" rx="4"/><path d="M21 19 H43 M21 27 H37"/></g>
+      <rect x="21" y="38" width="22" height="10" rx="3" fill="currentColor"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div id="stage">
+
+<!-- 1: title -->
+<section class="slide" id="s1" data-steps="1" data-title="Title">
+  <div class="title">
+    <div class="lockup w" data-in="0"><svg class="logo" aria-hidden="true"><use href="#deriv-logo" width="100%" height="100%"/></svg><span>Deriv <em>Keyfall</em></span></div>
+    <h1 class="w" data-in="0" style="--dl:.2s">Keyfall<em>MCP without API keys.</em></h1>
+    <p class="sub w" data-in="0" style="--dl:.55s">How to connect your agents to an MCP server, signing in with your company SSO</p>
+  </div>
+</section>
+
+<!-- 2: the API-key problem -->
+<section class="slide" id="s2" data-steps="3">
+  <h2>Alex wants Claude Code to use My App</h2>
+  <svg class="art" viewBox="0 0 1600 900">
+    <g data-in="0" class="w">
+      <use href="#i-person" class="ico" x="388" y="200" width="64" height="64"/>
+      <text class="t l" x="420" y="306" text-anchor="middle">Alex</text>
+      <path class="arr" d="M470 232 L750 232"/>
+      <use href="#i-agent" class="ico" x="768" y="200" width="64" height="64"/>
+      <text class="t l" x="800" y="306" text-anchor="middle">Claude Code</text>
+      <path class="arr" d="M850 232 L1130 232"/>
+      <use href="#i-server" class="ico" x="1148" y="200" width="64" height="64"/>
+      <text class="t l" x="1180" y="306" text-anchor="middle">My App</text>
+    </g>
+    <g data-in="1" class="w">
+      <rect class="card" x="420" y="370" width="760" height="170" rx="14"/>
+      <text class="t sl dim" x="444" y="404">Claude Code's config file</text>
+      <line class="sep" x1="420" y1="420" x2="1180" y2="420"/>
+      <text class="mono l" x="444" y="464">"url": "https://&lt;mcp-host&gt;/mcp",</text>
+      <text class="mono l" x="444" y="506">"X-API-Key": <tspan class="c-maroon">"mk_live_7Qp2Vx…"</tspan></text>
+    </g>
+    <g class="mv" data-in="2" style="--x0:728px;--y0:498px;--x1:640px;--y1:640px;--dl:0s">
+      <rect class="chip" stroke="#FF9AA0" x="-115" y="-22" width="230" height="44" rx="22"/><use href="#key" x="-101" y="-9" width="36" height="18" class="c-maroon"/><text class="t s" x="-57" y="7">dotfiles repo</text></g>
+    <g class="mv" data-in="2" style="--x0:728px;--y0:498px;--x1:960px;--y1:640px;--dl:.15s">
+      <rect class="chip" stroke="#FF9AA0" x="-145" y="-22" width="290" height="44" rx="22"/><use href="#key" x="-131" y="-9" width="36" height="18" class="c-maroon"/><text class="t s" x="-87" y="7">committed to GitHub</text></g>
+    <g class="mv" data-in="2" style="--x0:728px;--y0:498px;--x1:660px;--y1:715px;--dl:.3s">
+      <rect class="chip" stroke="#FF9AA0" x="-120" y="-22" width="240" height="44" rx="22"/><use href="#key" x="-106" y="-9" width="36" height="18" class="c-maroon"/><text class="t s" x="-62" y="7">laptop backup</text></g>
+    <g class="mv" data-in="2" style="--x0:728px;--y0:498px;--x1:940px;--y1:715px;--dl:.45s">
+      <rect class="chip" stroke="#FF9AA0" x="-80" y="-22" width="160" height="44" rx="22"/><use href="#key" x="-66" y="-9" width="36" height="18" class="c-maroon"/><text class="t s" x="-22" y="7">CI log</text></g>
+  </svg>
+  <p class="cap" data-in="0" data-out="1">Alex wants Claude Code, an AI agent, to read data from My App.</p>
+  <p class="cap" data-in="1" data-out="2">The usual way: paste an API key into Claude Code's config.</p>
+  <p class="cap" data-in="2">Keys get copied, and every copy works forever.</p>
+</section>
+
+<!-- 3: our way -->
+<section class="slide" id="s3" data-steps="2">
+  <h2>Our way: one URL, two steps</h2>
+  <svg class="art" viewBox="0 0 1600 900">
+    <g data-in="0" class="w">
+      <rect class="card" x="420" y="190" width="760" height="140" rx="14"/>
+      <text class="t sl dim" x="444" y="224">Claude Code's config file</text>
+      <line class="sep" x1="420" y1="240" x2="1180" y2="240"/>
+      <text class="mono l" x="444" y="292">"url": "https://&lt;mcp-host&gt;/mcp"</text>
+    </g>
+    <g data-in="1">
+      <text class="t s dim" x="570" y="414" text-anchor="middle">step 1</text>
+      <rect x="430" y="430" width="280" height="110" rx="18" fill="rgba(255,255,255,.04)" stroke="#F5F6F8" stroke-width="2.5"/>
+      <text class="t xl" x="570" y="499" text-anchor="middle">Add</text>
+      <path class="arr dash" d="M722 485 L876 485"/>
+      <g data-in="1" style="--dl:.5s">
+        <text class="t s dim" x="1030" y="414" text-anchor="middle">step 2</text>
+        <rect x="890" y="430" width="280" height="110" rx="18" fill="#F5F6F8"/>
+        <text class="t xl c-dark" x="1030" y="499" text-anchor="middle">Allow</text>
+        <text class="t s soft" x="800" y="620" text-anchor="middle">connected for up to 14 days</text>
+      </g>
+    </g>
+  </svg>
+  <p class="cap" data-in="0" data-out="1">The config holds only a URL. Nothing secret.</p>
+  <p class="cap" data-in="1">Alex adds the server, then clicks Allow. That's all Alex ever does.</p>
+</section>
+
+<!-- 4: the players -->
+<section class="slide" id="s4" data-steps="2">
+  <h2>Behind the scenes: four players</h2>
+  <svg class="art" viewBox="0 0 1600 900">
+    <g data-in="0">
+      <rect class="frame" x="110" y="200" width="660" height="330" rx="18"/>
+      <text class="t sl dim halo" x="440" y="207" text-anchor="middle">Alex's laptop</text>
+    </g>
+    <g data-in="0" class="w">
+      <use href="#i-person" class="ico" x="220" y="240" width="80" height="80"/>
+      <text class="t xl" x="260" y="384" text-anchor="middle" style="font-size:36px">Alex's browser</text>
+      <text class="t s soft" x="260" y="424" text-anchor="middle">a person clicking</text>
+      <text class="mono m dim" x="260" y="470" text-anchor="middle">signed in to SSO</text>
+    </g>
+    <g data-in="0" class="w" style="--dl:.3s">
+      <use href="#i-agent" class="ico" x="580" y="240" width="80" height="80"/>
+      <text class="t xl" x="620" y="384" text-anchor="middle" style="font-size:36px">Claude Code</text>
+      <text class="t s soft" x="620" y="424" text-anchor="middle">the AI agent</text>
+      <text class="mono m dim" x="620" y="470" text-anchor="middle">any MCP client</text>
+    </g>
+    <g data-in="1" class="w">
+      <use href="#i-server" class="ico" x="940" y="240" width="80" height="80"/>
+      <text class="t xl" x="980" y="384" text-anchor="middle" style="font-size:36px">MCP server</text>
+      <text class="t s soft" x="980" y="424" text-anchor="middle">has the data;</text>
+      <text class="t s soft" x="980" y="452" text-anchor="middle">every call needs a token</text>
+      <text class="mono m dim" x="980" y="496" text-anchor="middle">&lt;mcp-host&gt;</text>
+    </g>
+    <g data-in="1" class="w" style="--dl:.3s">
+      <rect x="1153" y="230" width="14" height="290" fill="url(#hatch)" stroke="#BDB3A3" stroke-opacity=".5"/>
+      <text class="t s c-grey" x="1160" y="218" text-anchor="middle">SSO</text>
+      <use href="#i-page" class="ico" x="1300" y="240" width="80" height="80"/>
+      <text class="t xl" x="1340" y="384" text-anchor="middle" style="font-size:36px">Allow page</text>
+      <text class="t s soft" x="1340" y="424" text-anchor="middle">a page in Alex's browser;</text>
+      <text class="t s soft" x="1340" y="452" text-anchor="middle">behind SSO</text>
+      <text class="mono m dim" x="1340" y="496" text-anchor="middle">&lt;approval-host&gt;</text>
+    </g>
+  </svg>
+  <p class="cap" data-in="0" data-out="1">On Alex's laptop: Alex's browser, and Claude Code, the AI agent.</p>
+  <p class="cap" data-in="1">On our side: the MCP server with the data, and the Allow page behind your SSO.</p>
+</section>
+
+<!-- 5: why two servers -->
+<section class="slide" id="s5" data-steps="3">
+  <h2>Why is the Allow page separate?</h2>
+  <svg class="art" viewBox="0 0 1600 900">
+    <rect class="box" x="100" y="200" width="280" height="100" rx="14"/>
+    <text class="t l" x="240" y="244" text-anchor="middle">Alex's browser</text>
+    <text class="t sl soft" x="240" y="278" text-anchor="middle">can log in with SSO</text>
+    <rect class="box" x="100" y="470" width="280" height="100" rx="14"/>
+    <text class="t l" x="240" y="514" text-anchor="middle">Claude Code</text>
+    <text class="t sl soft" x="240" y="548" text-anchor="middle">an AI agent: can't log in</text>
+    <rect x="900" y="160" width="30" height="480" fill="url(#hatch)" stroke="#BDB3A3" stroke-opacity=".5"/>
+    <text class="t c-grey" x="915" y="148" text-anchor="middle">SSO</text>
+
+    <g data-out="1">
+      <rect class="frame" x="1035" y="180" width="350" height="410" rx="18"/>
+      <text class="t sl dim" x="1210" y="622" text-anchor="middle">one server for everything</text>
+    </g>
+    <g class="srv srvB">
+      <rect class="box" x="0" y="0" width="300" height="100" rx="14"/>
+      <text class="t l" x="150" y="44" text-anchor="middle">Allow page</text>
+      <text class="t sl soft" x="150" y="78" text-anchor="middle">behind SSO</text>
+    </g>
+    <g class="srv srvA" data-at="1">
+      <rect class="box" x="0" y="0" width="300" height="100" rx="14"/>
+      <text class="t l" x="150" y="44" text-anchor="middle">MCP server</text>
+      <text class="t sl soft" x="150" y="78" text-anchor="middle" data-out="1">behind SSO too</text>
+      <text class="t sl soft" x="150" y="78" text-anchor="middle" data-in="1" style="--dl:1s">public; checks tokens</text>
+    </g>
+
+    <path class="arr d" data-in="0" d="M390 250 L1050 250"/>
+    <text class="t s halo" data-in="0" x="640" y="236" text-anchor="middle">logs in with SSO ✓</text>
+    <g data-in="0" data-out="1" style="--dl:.6s">
+      <path class="arr d" d="M390 505 L888 505" style="--c:var(--red);--dl:.6s"/>
+    </g>
+    <g data-in="0" data-out="1" style="--dl:1.5s">
+      <path class="arr dash" d="M888 540 L392 540" style="--c:var(--red)"/>
+      <text class="t s c-red" x="640" y="574" text-anchor="middle">gets an SSO login page</text>
+      <text class="t s c-red" x="240" y="612" text-anchor="middle">✗ Claude Code can't use it</text>
+    </g>
+    <g data-in="1" style="--dl:1.2s">
+      <path class="arr d" d="M390 520 L540 520" style="--c:var(--green);--dl:1.2s"/>
+      <text class="t s c-green halo" x="465" y="504" text-anchor="middle">token ✓</text>
+    </g>
+    <g data-in="2">
+      <path class="d" d="M700 570 L915 676" stroke="#3FC1A5" stroke-width="2.6"/>
+      <path class="d" d="M1210 300 L985 676" stroke="#3FC1A5" stroke-width="2.6"/>
+      <use href="#key" x="915" y="668" width="70" height="35" class="c-teal"/>
+      <text class="t s c-teal" x="950" y="740" text-anchor="middle">one shared signing key</text>
+    </g>
+  </svg>
+  <p class="cap" data-in="0" data-out="1">If SSO guarded the whole server, the browser could log in, but Claude Code would get stuck.</p>
+  <p class="cap" data-in="1" data-out="2">So split it: the MCP server stays public and checks tokens. Only the Allow page is behind SSO.</p>
+  <p class="cap" data-in="2">They trust each other through one shared signing key: one signs, the other checks.</p>
+</section>
+
+<!-- 6: the sequence -->
+<section class="slide" id="s6" data-steps="15">
+  <h2>What happens after Alex adds the server</h2>
+  <svg class="art" viewBox="0 0 1600 900"><g id="seq" data-at="14"></g></svg>
+  <p class="cap" data-in="0" data-out="1">Claude Code asks for data, without a token.</p>
+  <p class="cap" data-in="1" data-out="2">The server says no, and tells Claude Code where to sign in.</p>
+  <p class="cap" data-in="2" data-out="3">Claude Code reads the sign-in details and registers itself. It gets an ID (client_id).</p>
+  <p class="cap" data-in="3" data-out="4">Claude Code makes a random secret and its hash. It keeps the secret to itself.</p>
+  <p class="cap" data-in="4" data-out="5">Claude Code opens a browser tab on Alex's laptop.</p>
+  <p class="cap" data-in="5" data-out="6">The tab carries the hash of Claude Code's secret, never the secret itself.</p>
+  <p class="cap" data-in="6" data-out="7">The server sends the browser to the Allow page, with a signed note.</p>
+  <p class="cap" data-in="7" data-out="8">SSO checks it's really Alex. Outsiders stop here.</p>
+  <p class="cap" data-in="8" data-out="9">The page asks Alex. Alex clicks Allow.</p>
+  <p class="cap" data-in="9" data-out="10">The Allow page signs a 60-second code and sends the browser to localhost with it.</p>
+  <p class="cap" data-in="10" data-out="11">The browser hands the code to Claude Code, which is listening on localhost.</p>
+  <p class="cap" data-in="11" data-out="12">Claude Code sends the one-time code and the secret, straight to the server over HTTPS.</p>
+  <p class="cap" data-in="12" data-out="13">The server hashes the secret. It matches, so Claude Code gets an access token (1 hour) and a refresh token.</p>
+  <p class="cap" data-in="13" data-out="14">Every request now carries the token.</p>
+  <p class="cap" data-in="14">Two steps for Alex. Everything else happens on its own.</p>
+</section>
+
+<!-- 6b: how the code reaches the agent (Claude Code) -->
+<section class="slide" id="s6b" data-steps="3">
+  <h2>How the code gets back to Claude Code</h2>
+  <svg class="art" viewBox="0 0 1600 900">
+    <rect class="frame" x="80" y="170" width="1000" height="490" rx="18"/>
+    <text class="t sl dim" x="104" y="204">Alex's laptop</text>
+    <g data-in="0">
+      <rect class="box" x="130" y="240" width="320" height="150" rx="14"/>
+      <text class="t l" x="290" y="290" text-anchor="middle">Claude Code</text>
+      <text class="t sl soft" x="290" y="326" text-anchor="middle">an AI agent</text>
+      <text class="t sl c-red" x="290" y="356" text-anchor="middle">can't log in to a web page</text>
+    </g>
+    <g data-in="0" style="--dl:.3s">
+      <rect class="box" x="720" y="240" width="320" height="150" rx="14"/>
+      <text class="t l" x="880" y="290" text-anchor="middle">Alex's browser</text>
+      <text class="t sl soft" x="880" y="326" text-anchor="middle">a person clicks here</text>
+      <text class="t sl c-green" x="880" y="356" text-anchor="middle">can log in with SSO ✓</text>
+    </g>
+    <g data-in="1">
+      <text class="t sl soft" x="290" y="436" text-anchor="middle">opens a tiny listener at</text>
+      <text class="mono l" x="290" y="470" text-anchor="middle">localhost:53682</text>
+      <text class="t xs dim" x="290" y="498" text-anchor="middle">a random free port, only on this laptop</text>
+    </g>
+    <g data-in="2">
+      <rect class="box" x="1180" y="240" width="320" height="150" rx="14"/>
+      <text class="t l" x="1340" y="300" text-anchor="middle">Allow page</text>
+      <text class="mono m dim" x="1340" y="336" text-anchor="middle">&lt;approval-host&gt;</text>
+      <path class="arr d" d="M1172 315 L1050 315"/>
+      <text class="t xs halo" x="1110" y="300" text-anchor="middle">after Allow</text>
+    </g>
+    <g data-in="2" style="--dl:.9s">
+      <text class="t xs dim" x="130" y="566">the browser is sent to this URL:</text>
+      <rect class="card" x="120" y="578" width="920" height="56" rx="10"/>
+      <text class="mono l" x="142" y="614">http://localhost:53682/callback?<tspan class="c-green">code=eyJhbGci…</tspan>&amp;state=…</text>
+      <path class="arr d" d="M712 330 L460 330" style="--c:var(--green);--dl:.9s"/>
+      <text class="t s c-green halo" x="586" y="316" text-anchor="middle">code</text>
+      <text class="t xs c-green halo" x="586" y="362" text-anchor="middle">Claude Code receives it ✓</text>
+    </g>
+  </svg>
+  <p class="cap" data-in="0" data-out="1">Alex's browser can log in with SSO. Claude Code is an AI agent, not a browser, so it can't.</p>
+  <p class="cap" data-in="1" data-out="2">So Claude Code opens a tiny listener on Alex's own laptop.</p>
+  <p class="cap" data-in="2">After Allow, the browser is sent to that address with the code. Claude Code is listening, so it gets it.</p>
+</section>
+
+<!-- 7: PKCE, why -->
+<section class="slide" id="s7" data-steps="4">
+  <h2>PKCE: proving Claude Code is the one who asked</h2>
+  <svg class="art" viewBox="0 0 1600 900">
+    <g data-in="0" class="w">
+      <rect class="card" x="80" y="160" width="920" height="60" rx="10"/>
+      <text class="mono l" x="102" y="198">http://localhost:53682/callback?<tspan class="c-green">code=eyJhbGci…</tspan>&amp;state=…</text>
+    </g>
+    <g data-in="0" style="--dl:.6s">
+      <text class="t sl c-red" x="104" y="283">the code can leak into:</text>
+      <rect x="340" y="258" width="180" height="36" rx="18" fill="none" stroke="#FF444F" stroke-width="1.8" stroke-dasharray="6 5"/><text class="t sl" x="430" y="283" text-anchor="middle">browser history</text>
+      <rect x="540" y="258" width="80" height="36" rx="18" fill="none" stroke="#FF444F" stroke-width="1.8" stroke-dasharray="6 5"/><text class="t sl" x="580" y="283" text-anchor="middle">logs</text>
+      <rect x="640" y="258" width="290" height="36" rx="18" fill="none" stroke="#FF444F" stroke-width="1.8" stroke-dasharray="6 5"/><text class="t sl" x="785" y="283" text-anchor="middle">another app on the laptop</text>
+    </g>
+    <rect class="box" x="120" y="380" width="300" height="90" rx="14"/><text class="t l" x="270" y="435" text-anchor="middle">Claude Code</text>
+    <rect class="box" x="1000" y="380" width="440" height="90" rx="14"/><text class="t l" x="1220" y="435" text-anchor="middle">MCP server: /token</text>
+    <g data-in="0" style="--dl:1s">
+      <rect x="560" y="580" width="280" height="70" rx="12" fill="none" stroke="#FF444F" stroke-width="2" stroke-dasharray="7 6"/>
+      <text class="t s c-red" x="700" y="622" text-anchor="middle">a thief with the code</text>
+    </g>
+    <g data-in="1">
+      <text class="t sl dim" x="270" y="500" text-anchor="middle">no client secret of its own</text>
+    </g>
+    <g data-in="1" data-out="2">
+      <path class="arr d" d="M842 598 L996 468" style="--c:var(--red)"/>
+      <text class="t s c-red" x="1220" y="512" text-anchor="middle">→ the thief gets a token</text>
+    </g>
+    <g data-in="2">
+      <rect class="pill" style="--c:var(--yellow)" x="150" y="522" width="240" height="36" rx="18"/>
+      <text class="mono m c-yellow" x="270" y="546" text-anchor="middle">secret · in memory</text>
+      <text class="t s c-blue" x="1020" y="198">← only its hash rides in the code</text>
+    </g>
+    <g data-in="3">
+      <path class="arr d" d="M430 425 L990 425"/>
+      <text class="t s halo" x="710" y="410" text-anchor="middle"><tspan class="c-green">one-time code</tspan> + <tspan class="c-yellow">secret</tspan>, straight over HTTPS</text>
+      <path class="arr dash" d="M842 604 L996 472" style="--c:var(--red)"/>
+      <text class="t s" x="1220" y="512" text-anchor="middle">SHA-256(<tspan class="c-yellow">secret</tspan>) = <tspan class="c-blue">hash</tspan> in the code ✓ → <tspan class="c-gold">token</tspan></text>
+      <text class="t s c-red" x="1220" y="552" text-anchor="middle">thief never saw the secret ✗ refused</text>
+    </g>
+  </svg>
+  <p class="cap" data-in="0" data-out="1">The code travels inside a URL. URLs end up in history and logs, and another app could grab them.</p>
+  <p class="cap" data-in="1" data-out="2">Agents have no password of their own, so without PKCE, whoever has the code gets the token.</p>
+  <p class="cap" data-in="2" data-out="3">With PKCE, Claude Code made a secret at the start and keeps it in memory. Only its hash goes into URLs.</p>
+  <p class="cap" data-in="3">Claude Code reveals the secret once, straight to the server over HTTPS. The thief only ever saw URLs.</p>
+</section>
+
+<!-- 8: hashing is not encryption -->
+<section class="slide" id="s8" data-steps="3">
+  <h2>Why can't you reverse the hash?</h2>
+  <svg class="art" viewBox="0 0 1600 900">
+    <g data-in="0" data-out="1">
+      <text class="t l" x="100" y="230">Encryption</text>
+      <text class="mono xl" x="150" y="304">hello</text>
+      <path class="arr" d="M244 296 L328 296"/>
+      <rect class="box" x="340" y="264" width="210" height="60" rx="12"/>
+      <use href="#key" class="ico" x="358" y="284" width="40" height="20"/><text class="t s" x="410" y="302">encrypt</text>
+      <path class="arr" d="M560 296 L644 296"/>
+      <text class="mono xl soft" x="656" y="304">x9#Lq2…</text>
+      <path class="arr" d="M800 296 L884 296"/>
+      <rect class="box" x="896" y="264" width="210" height="60" rx="12"/>
+      <use href="#key" class="ico" x="914" y="284" width="40" height="20"/><text class="t s" x="966" y="302">decrypt</text>
+      <path class="arr" d="M1116 296 L1200 296"/>
+      <text class="mono xl" x="1212" y="304">hello</text>
+      <text class="t s soft" x="100" y="364">two-way: the same key locks it and unlocks it</text>
+    </g>
+    <g data-in="0" data-out="1" style="--dl:.8s">
+      <text class="t l" x="100" y="450">Hashing (SHA-256)</text>
+      <text class="mono xl c-yellow" x="150" y="524">secret</text>
+      <path class="arr" d="M262 516 L328 516"/>
+      <rect class="box" x="340" y="484" width="210" height="60" rx="12"/>
+      <text class="t l" x="445" y="524" text-anchor="middle">SHA-256</text>
+      <path class="arr" d="M560 516 L644 516"/>
+      <text class="mono xl c-blue" x="656" y="524">E9Melhoa…</text>
+      <path class="arr d" d="M760 546 C680 640, 300 640, 214 548" style="--c:var(--red);--dl:1.4s"/>
+      <text class="t s c-red" x="487" y="660" text-anchor="middle">✗ no key, so there is nothing to decrypt</text>
+      <text class="t s soft" x="900" y="524">one-way: no key exists</text>
+    </g>
+    <g data-in="1" data-out="2">
+      <text class="t l c-yellow" x="524" y="220" text-anchor="middle">secret</text>
+      <text class="t l c-blue" x="1196" y="220" text-anchor="middle">SHA-256 hash</text>
+      <text class="mono l c-yellow" x="240" y="300">dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk</text>
+      <path class="arr" d="M820 292 L898 292"/>
+      <text class="mono l c-blue" x="912" y="300">E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM</text>
+      <g data-in="1" style="--dl:.7s">
+        <text class="mono l c-yellow" x="240" y="420">dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjX<tspan class="c-red b">l</tspan></text>
+        <path class="arr" d="M820 412 L898 412"/>
+        <text class="mono l c-blue" x="912" y="420">P5uWm2WHuiZkzwI-fJYP30ZhimUR2kOTekHrkt0PwoU</text>
+        <text class="t s c-red" x="800" y="470" text-anchor="end">one character changed</text>
+        <text class="t s c-blue" x="1196" y="470" text-anchor="middle">everything changed</text>
+      </g>
+    </g>
+    <g data-in="2">
+      <text class="t xl" x="800" y="250" text-anchor="middle">2<tspan baseline-shift="super" font-size="26">256</tspan> possible secrets</text>
+      <text class="mono m dim" x="800" y="306" text-anchor="middle">115 792 089 237 316 195 423 570 985 008 687 907 853</text>
+      <text class="mono m dim" x="800" y="334" text-anchor="middle">269 984 665 640 564 039 457 584 007 913 129 639 936</text>
+      <text class="t" x="800" y="430" text-anchor="middle">To attack it: guess a secret, hash it, compare. Repeat.</text>
+      <text class="t" x="800" y="480" text-anchor="middle">At 10<tspan baseline-shift="super" font-size="16">18</tspan> guesses a second:</text>
+      <text class="t xl" x="800" y="550" text-anchor="middle">about 10<tspan baseline-shift="super" font-size="26">51</tspan> years</text>
+      <text class="t s soft" x="800" y="620" text-anchor="middle">and the code expires after 60 seconds anyway</text>
+    </g>
+  </svg>
+  <p class="cap" data-in="0" data-out="1">SHA-256 is a hash, not encryption. There is no key, so there is nothing to decrypt.</p>
+  <p class="cap" data-in="1" data-out="2">Change one character and the whole hash changes. There are no clues to follow back.</p>
+  <p class="cap" data-in="2">The only attack is guessing, and it would never finish.</p>
+</section>
+
+<!-- 9: timers -->
+<section class="slide" id="s9" data-steps="5">
+  <h2>Every credential has a timer</h2>
+  <svg class="art" viewBox="0 0 1600 900">
+    <text class="t s dim" x="760" y="160">how long it lives</text>
+    <g data-in="0">
+      <text class="t l c-purple" x="80" y="200">signed note</text>
+      <text class="t xs soft" x="80" y="230">the MCP server hands it to the Allow page</text>
+      <text class="mono s dim" x="80" y="254">request token (JWT)</text>
+      <rect class="grow f-purple" x="760" y="192" width="237" height="36" rx="4" style="--dl:.3s"/>
+      <text class="t s c-purple" x="1010" y="217">10 min</text>
+    </g>
+    <g data-in="1">
+      <text class="t l c-green" x="80" y="312">one-time code</text>
+      <text class="t xs soft" x="80" y="342">the Allow page hands it to Claude Code; used once, at /token</text>
+      <text class="mono s dim" x="80" y="366">authorization code (JWT)</text>
+      <rect class="grow f-green" x="760" y="304" width="104" height="36" rx="4" style="--dl:.3s"/>
+      <text class="t s c-green" x="876" y="329">60 s, works once</text>
+    </g>
+    <g data-in="2">
+      <text class="t l c-gold" x="80" y="424">access token</text>
+      <text class="t xs soft" x="80" y="454">Claude Code attaches it to every request; the MCP server checks it</text>
+      <text class="mono s dim" x="80" y="478">access_token</text>
+      <rect class="grow f-gold" x="760" y="416" width="340" height="36" rx="4" style="--dl:.3s"/>
+      <text class="t s c-gold" x="1112" y="441">1 hour</text>
+    </g>
+    <g data-in="3">
+      <text class="t l c-gold" x="80" y="536">refresh token</text>
+      <text class="t xs soft" x="80" y="566">Claude Code trades it for a new access + refresh token, silently</text>
+      <text class="mono s dim" x="80" y="590">refresh_token</text>
+      <g id="rchain"></g>
+      <text class="t s c-gold" x="1436" y="516" text-anchor="end">each one used once · the chain ends at 14 days, then Allow again</text>
+    </g>
+    <g>
+      <line x1="760" y1="640" x2="1480" y2="640" stroke="#8C93A1" stroke-width="2"/>
+      <g stroke="#8C93A1" stroke-width="2">
+        <line x1="863.5" y1="640" x2="863.5" y2="650"/><line x1="996.5" y1="640" x2="996.5" y2="650"/><line x1="1100" y1="640" x2="1100" y2="650"/>
+        <line x1="1283.5" y1="640" x2="1283.5" y2="650"/><line x1="1436" y1="640" x2="1436" y2="650"/>
+      </g>
+      <g class="t xs dim" text-anchor="middle">
+        <text x="863.5" y="676">1 min</text><text x="996.5" y="676">10 min</text><text x="1100" y="676">1 h</text>
+        <text x="1283.5" y="676">1 day</text><text x="1436" y="676">14 days</text>
+      </g>
+      <text class="t xs dim it" x="1480" y="706" text-anchor="end">log scale</text>
+    </g>
+    <g data-in="4">
+      <path class="d" d="M740 176 L1460 176 L1460 600 L740 600 Z" stroke="#FF444F" stroke-width="2.5" stroke-dasharray="1"/>
+      <text class="t l c-red" x="1100" y="752" text-anchor="middle">admin revoke: all of them stop at once</text>
+    </g>
+  </svg>
+  <p class="cap" data-in="0" data-out="1">The signed note gives Alex 10 minutes to sign in and click Allow.</p>
+  <p class="cap" data-in="1" data-out="2">The code only has to make one hop, so it lives 60 seconds and works once.</p>
+  <p class="cap" data-in="2" data-out="3">Claude Code attaches the access token to every request. If it leaks, it's dead within the hour.</p>
+  <p class="cap" data-in="3" data-out="4">Each refresh swaps the refresh token for a new one. The chain ends 14 days after the Allow.</p>
+  <p class="cap" data-in="4">An admin can revoke Alex at any time, and every one of them stops working.</p>
+</section>
+
+
+
+<!-- 12: allow page -->
+<section class="slide" id="s12" data-steps="2">
+  <h2>The Allow page is the front door</h2>
+  <svg class="art" viewBox="0 0 1600 900">
+    <g data-in="0" class="w">
+      <rect x="200" y="170" width="520" height="560" rx="18" fill="#F6F7F9"/>
+      <text class="t xl c-dark b" x="236" y="236">Connect an agent</text>
+      <text class="t s c-dark" x="236" y="286">Signed in as alex@example.com</text>
+      <rect x="236" y="302" width="120" height="32" rx="16" fill="#E6E9EE"/><text class="t xs c-dark" x="296" y="324" text-anchor="middle">role: user</text>
+      <line x1="236" y1="360" x2="684" y2="360" stroke="#E3E6EB" stroke-width="1.5"/>
+      <text class="t s c-dark" x="236" y="404"><tspan class="b">Claude Code</tspan> wants to read My App data.</text>
+      <text class="t s" x="236" y="452" style="fill:#6B7280">The code goes to:</text>
+      <text class="t s c-dark b" x="236" y="482">an app on this computer</text>
+      <text class="t s it" x="236" y="536" style="fill:#C9222D">Only allow an agent you started</text>
+      <text class="t s it" x="236" y="564" style="fill:#C9222D">yourself, just now.</text>
+      <rect x="236" y="630" width="210" height="56" rx="12" fill="none" stroke="#181C25" stroke-width="2"/>
+      <text class="t c-dark" x="341" y="666" text-anchor="middle">Cancel</text>
+      <rect x="466" y="630" width="218" height="56" rx="12" fill="#FF444F"/>
+      <text class="t" x="575" y="666" text-anchor="middle" style="fill:#FFFFFF;font-weight:700">Allow</text>
+    </g>
+    <g data-in="1">
+      <circle cx="830" cy="262" r="8" class="c-red"/>
+      <text class="t l" x="852" y="272">No check, no button</text>
+      <text class="t s soft" x="852" y="308">if it can't verify Alex, the key or revoke, it stops</text>
+    </g>
+    <g data-in="1" style="--dl:.35s">
+      <circle cx="830" cy="422" r="8" class="c-grey"/>
+      <text class="t l" x="852" y="432">Can't be framed</text>
+      <text class="t s soft" x="852" y="468">no other site can trick Alex into clicking</text>
+    </g>
+    <g data-in="1" style="--dl:.7s">
+      <circle cx="830" cy="582" r="8" class="c-teal"/>
+      <text class="t l" x="852" y="592">Tied to Alex and this request</text>
+      <text class="t s soft" x="852" y="628">the form is useless to anyone else</text>
+    </g>
+  </svg>
+  <p class="cap" data-in="0" data-out="1">The one page Alex sees: who, which role, and where the code goes.</p>
+  <p class="cap" data-in="1">If it can't check something, there is no Allow button.</p>
+</section>
+
+<!-- 13: build yours -->
+<section class="slide" id="s13" data-steps="2">
+  <h2>Build yours</h2>
+  <svg class="art" viewBox="0 0 1600 900">
+    <g data-in="0" class="w">
+      <rect class="card" x="300" y="190" width="1000" height="190" rx="14"/>
+      <circle cx="328" cy="216" r="6" fill="#454B59"/><circle cx="348" cy="216" r="6" fill="#454B59"/><circle cx="368" cy="216" r="6" fill="#454B59"/>
+      <text class="mono l" x="330" y="268"><tspan class="dim">$</tspan> git clone https://github.com/deriv-com/keyfall</text>
+      <text class="mono l" x="330" y="310"><tspan class="dim">$</tspan> cd keyfall/demo &amp;&amp; docker compose up --build</text>
+      <text class="mono l" x="330" y="352"><tspan class="dim">$</tspan> claude mcp add --transport http demo http://localhost:8000/mcp</text>
+    </g>
+    <g data-in="1">
+      <text class="t s dim" x="200" y="460">You bring three things</text>
+      <g data-in="1" style="--dl:.1s"><text class="t xl" x="200" y="530">1</text><text class="t l" x="240" y="526">SSO groups</text>
+        <text class="t s soft" x="240" y="562">one per role</text></g>
+      <g data-in="1" style="--dl:.35s"><text class="t xl" x="640" y="530">2</text><text class="t l" x="680" y="526">An identity-aware proxy</text>
+        <text class="t s soft" x="680" y="562">in front of the Allow page</text>
+        <text class="t s soft" x="680" y="592">(or your own login)</text></g>
+      <g data-in="1" style="--dl:.6s"><text class="t xl c-teal" x="1080" y="530">3</text><text class="t l c-teal" x="1120" y="526">One shared signing key</text>
+        <text class="t s soft" x="1120" y="562">the same on both servers</text></g>
+    </g>
+  </svg>
+  <p class="cap" data-in="0" data-out="1">Clone this repo, start the demo, and add it to Claude Code.</p>
+  <p class="cap big" data-in="1">Questions?</p>
+</section>
+
+<div id="brand"><svg class="logo" aria-hidden="true"><use href="#deriv-logo" width="100%" height="100%"/></svg><span>Deriv <em>Keyfall</em></span></div>
+<div id="bar"></div>
+<div id="num"></div>
+</div>
+
+<script>
+(function(){
+const NS='http://www.w3.org/2000/svg';
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/* ---------- speaker notes, one entry per step ---------- */
+const NOTES={
+ s1:["Today: how to connect AI agents (Claude Code, Codex, VS Code, Gemini CLI) to an MCP server with company SSO sign-in instead of API keys.\nWe follow one person, Alex, connecting Claude Code.\nEverything is generic (My App, <mcp-host>, <approval-host>) and comes from this repo."],
+ s2:["Alex wants an AI agent (Claude Code here; the same works for other agents) to call tools on our server.",
+     "The usual answer is an API key in the agent's config: a long-lived shared secret.",
+     "Keys end up in dotfiles, GitHub commits, backups and CI logs.\nNo expiry, no identity per person, no per-person revoke. Rotating it breaks everyone.\nThis is what we are replacing."],
+ s3:["In Claude Code it's one command:\nclaude mcp add --transport http my-app https://<mcp-host>/mcp\nOnly the URL. Never a secret.",
+     "Step 1: add the server (the command above).\nStep 2: in Claude Code, /mcp → Authenticate (or the first tool call) opens a browser tab. SSO only asks Alex to sign in if the proxy's session has expired. Alex clicks Allow.\nClaude Code then stays connected for up to 14 days."],
+ s4:["Alex is the person. Alex's browser and Claude Code are two separate apps on the same laptop.\nThe browser can do SSO logins (it has cookies, Alex can type). Claude Code is an AI agent: it makes HTTP calls from code and can't log in to a web page.",
+     "MCP server = <mcp-host>: public. Serves /mcp plus the OAuth endpoints (/register, /authorize, /token, /revoke, .well-known).\nAllow page = <approval-host>: an internal web app behind an identity-aware proxy, with your SSO as the identity provider.\nThe Allow page is a normal web page: it opens in Alex's browser, the same browser that does the SSO login. On the slides, 'Allow page' means the server that serves it."],
+ s5:["An identity-aware proxy protects a site by redirecting anyone without a session to the SSO login page.\nThe browser can follow that. Claude Code calls /register and /token from code: it gets the login page's HTML back instead of JSON and fails ('invalid JSON').",
+     "So the MCP server (<mcp-host>) is not behind the proxy (or has a bypass rule) and protects itself: every /mcp call needs a bearer token.\nOnly the Allow page (<approval-host>) is behind the proxy + SSO.\nQuick check: curl -i -X POST https://<mcp-host>/mcp must return 401 from your server, not the proxy's login page.",
+     "One HS256 key, at least 32 bytes, the same value on both hosts, kept in the secret manager.\nThe MCP server signs the 'signed note' (request token) with it and the Allow page checks it; the Allow page signs the code with it and the MCP server checks it.\nPlus Redis for revoke flags and audit. The MCP server has no SSO app and no client secret."],
+ s6:["Claude Code calls POST /mcp with no Authorization header.",
+     "401 + WWW-Authenticate: Bearer resource_metadata=https://<mcp-host>/.well-known/oauth-protected-resource/mcp.\nThat header is how Claude Code learns where to sign in.",
+     "Discovery, all direct HTTPS calls, no browser yet:\n1. /.well-known/oauth-protected-resource/mcp → the sign-in server is <mcp-host> itself.\n2. /.well-known/oauth-authorization-server → the /authorize, /token, /register and /revoke addresses; S256 only.\n3. The agent identifies itself: either a Client ID Metadata Document (CIMD: its client_id is an https URL the server fetches), or POST /register (dynamic client registration, DCR) with its name and redirect_uri → a client_id (kept 90 days). The redirect_uri is checked against the allowlist here.\nThe MCP SDK serves all of this.\nIf asked: the 2026-07-28 MCP spec prefers CIMD and marks DCR deprecated but still allowed; this server accepts both.",
+     "PKCE starts here. Claude Code makes a random code_verifier (RFC 7636 recommends 32 random bytes) and keeps it in memory, and computes code_challenge = base64url(SHA-256(code_verifier)).\nIt also starts its localhost listener and makes a random state value.",
+     "Claude Code opens Alex's browser (same laptop) at <mcp-host>/authorize with client_id, redirect_uri, state and code_challenge.",
+     "code_challenge = base64url(SHA-256(code_verifier)). Only the hash travels. S256 is the only method we allow.",
+     "The MCP server signs a request token (HS256, 10 min; iss mcp-server, aud mcp-connect:request) holding the client, redirect_uri, challenge and state.\nIt redirects the browser to <approval-host>/connect-agent/authorize?req=…",
+     "The identity-aware proxy shows the SSO login only if the session expired. People outside the allowed SSO groups stop here.\nThe Allow page verifies the proxy's signed identity token itself (RS256, JWKS, audience) and reads the email and groups.",
+     "The page shows Alex's email and role, the agent's name and where the code goes. Alex clicks Allow (Cancel returns error=access_denied).",
+     "On Allow, the Allow page checks the CSRF token and the revoke flag again, then signs the code with the shared key: a JWT valid 60 s, with a random jti, Alex's email and role, client_id, redirect_uri and the challenge (the hash), copied from the signed note.\nThe MCP server does not make the code; it only checks it later at /token.\nThe Allow page redirects the browser to http://localhost:<port>/callback?code=…&state=….",
+     "The browser loads that local URL. Claude Code's listener receives the code and checks that state matches what it sent; the tab shows a 'done' page (next slide shows this).",
+     "POST /token with the one-time code + code_verifier (+ client_id, redirect_uri). This is a direct HTTPS call from Claude Code to the MCP server: no browser, no URL.\nThis happens once per sign-in. Later renewals use only the refresh token.",
+     "What matches: the server takes the secret Claude Code just sent, hashes it with SHA-256, and compares it with the hash Claude Code sent at the start (it rode inside the code). Equal → this is the same Claude Code that started the sign-in.\nThe server also checks signature, expiry, client, redirect_uri and single use (Redis SET NX on the jti).\nThen it issues an access token (1 h) and a refresh token (rotates; never past 14 days). Claude Code keeps both; Redis stores only SHA-256 hashes of tokens.",
+     "Every /mcp call: Authorization: Bearer ….\nThe server checks the revoke flag, reads the role from the token record and logs the call.",
+     "Recap: SSO only touches the Allow page. The MCP server trusts a 60-second code signed with the shared key, plus the PKCE check."],
+ s6b:["Same flow, shown with Claude Code this time. Alex's browser has the SSO session cookies and a person who can type and click; an agent like Claude Code only makes HTTP calls from code.\nThat's why the sign-in happens in the browser, and the code has to be handed to the agent afterwards. The Allow page opens in this same browser.",
+      "Claude Code, Codex, Gemini CLI and VS Code start a small local HTTP listener on a free port and register http://localhost:<port>/callback (or 127.0.0.1) as their redirect_uri. The listener is reachable only from Alex's own laptop.\nIf someone asks about other agents: Codex, Gemini CLI and VS Code do the same; Cursor desktop uses an app link (cursor://…/oauth/callback) that the OS hands to the app.",
+      "After Allow, the Allow page redirects the browser to redirect_uri?code=…&state=…. The browser loads that local URL, the agent's listener receives the request, reads the code, and moves on to /token.\nWhere codes may go (checked at /register, /authorize and on the Allow page): https (minus any domains you block with MCP_BLOCKED_REDIRECT_DOMAINS, e.g. web agents whose calls come from the vendor's cloud); http only to loopback; or an exact list of app callbacks. Never a #fragment."],
+ s7:["The code reaches Claude Code inside a URL: http://localhost:<port>/callback?code=…. Anything that sees URLs can see the code: browser history, proxy or server logs, crash reports, or another app on the laptop that grabs the same port.",
+     "Agents like Claude Code are 'public clients': they register themselves and get no client secret, because there's nowhere safe to keep one on every laptop.\nA normal web app proves itself at /token with its client secret. Agents can't, so without PKCE the code alone is enough to get a token.",
+     "PKCE = Proof Key for Code Exchange (RFC 7636).\nBefore opening the browser, Claude Code made a random secret (code_verifier) and kept it in memory. It put only SHA-256 of it (code_challenge) into the /authorize URL. We copy that hash into the signed code.",
+     "At /token, Claude Code sends the code + the secret in a direct HTTPS request to the MCP server. Not through the browser and not in a URL, so history, logs and other apps never see it.\nThe server hashes the secret and compares it with the hash inside the code. Match → token. The thief has the code but never saw the secret → invalid_grant.\nSo 'only Claude Code has the secret' means: until this final call, nobody else ever sees it. After that the code is used up anyway.\nLikely questions:\n• Can the thief send the hash instead? No: the server hashes whatever it receives, and the hash of the hash is a different value.\n• Who does this check? The MCP SDK, in its /token handler."],
+ s8:["The key point: SHA-256 is a hash, not encryption.\nEncryption uses a key; whoever has the key can reverse it.\nA hash has no key at all. There is no 'decrypt' for SHA-256: it runs the input through 64 rounds of mixing, and nobody knows a way to run that backwards.\nThat's why it's fine for the hash to travel in the open.",
+     "These are the RFC 7636 example values. Changing the last character (k → l) changes the whole hash.\nSo you can't 'get closer' to the secret: a near miss looks just as wrong as a far one.",
+     "So the only attack is guessing: pick a secret, hash it, compare.\nA 32-byte random secret has 2^256 ≈ 1.16 × 10^77 possibilities. At 10^18 guesses a second, that's about 10^51 years.\nAnd the code expires after 60 seconds anyway."],
+ s9:["Signed note = request token. The MCP server creates it at /authorize; the Allow page reads it.\nValid 600 s (10 min): enough time for Alex to sign in with SSO and click Allow. The Allow page also refuses one issued more than 600 s ago.",
+     "Code = authorization code. Signed by the Allow page, valid 60 s, single use: Redis SET <prefix>code-used:<jti> 1 NX EX 300 at exchange.\nIt only has to survive one redirect and one /token call, so it's as short as possible.",
+     "Access token: a random string, 1 hour, sent on every /mcp call.\nIf it leaks, the damage window is at most an hour. Redis keeps only its SHA-256.",
+     "Refresh token: used only at /token to get a new pair, a new access token AND a new refresh token. Each one works once (rotation; the old pair is deleted), so it's a chain R1 → R2 → R3 …, not one token for 14 days.\nEvery token in the chain carries the same end date, set at the first sign-in and never extended: TTL = grant end − now. An unused one can sit until that date. At day 14 the chain ends: Alex clicks Allow again, and the SSO groups are read again.\nGrace: if several Claude Code sessions refresh at the same moment, they all get the same new pair for 30 s (max 120), so nobody is logged out.\nRegistered clients are kept for 90 days.",
+     "Revoke: an admin sets <prefix>revoked:<email> and deletes Alex's tokens. The flag is checked on the code, the refresh token and every access token, so it takes effect at once.\nRemoved from the SSO group but not revoked? Access ends by day 14 at the latest."],
+ s12:["Shows who is signed in, their role, the agent's name (escaped, cut to 80 chars) and where the code goes.\nIncludes the line: 'Only allow an agent you started yourself, just now.'",
+      "Roles: SSO groups → role (exact match; highest wins: admin > user > readonly). The role rides in the code and the token; tools trim fields for readonly on the server.\nFails closed: key missing or short → 503; Redis down → 503; no allowed group → 403; bad request token → 400.\nCSRF token = HMAC(key, email + req).\nHeaders: CSP frame-ancestors 'none', X-Frame-Options DENY, Cache-Control no-store.\nhttps callbacks get a meta-refresh hand-off, because CSP form-action blocks the redirect chain."],
+ s13:["The repo holds reference/mcp_server_auth.py (the MCP server side: OAuth provider, token store, wiring for the MCP Python SDK), reference/allow_page.py (the Allow page), reference/login_check/ (who is signed in: one module per identity-aware proxy, plus a demo-only fake login), reference/admin.py (list connections, revoke, restore, audit events), demo/ (both hosts and Redis on your laptop with Docker, no SSO needed), docs/ (how it works and how to set it up) and skill/ (lets your agent add this to your own MCP server).\nThe demo: docker compose up --build in demo/, then claude mcp add --transport http demo http://localhost:8000/mcp, then /mcp → Authenticate. A fake login stands in for your SSO.",
+      "1. SSO groups, one per role: mcp-readonly, mcp-user, mcp-admin (MCP_GROUP_ROLES maps groups to roles).\n2. An identity-aware proxy in front of <approval-host> that passes a signed identity token with the email and groups (pick a module in reference/login_check/), or your own login check.\n3. One shared signing key: python -c \"import secrets; print(secrets.token_urlsafe(48))\", the same MCP_SIGNING_KEY on both hosts.\nThen run the tests in tests/ before shipping."]
+};
+
+/* ---------- slide 9: the refresh-token chain (each token used once, same end date) ---------- */
+(function buildChain(){
+  const n=10, gap=6, x0=760, w=(676-gap*(n-1))/n, lab={0:'R1',1:'R2',2:'R3',3:'…',[n-1]:'Rn'};
+  let h='';
+  for(let i=0;i<n;i++){ const x=x0+i*(w+gap), dl=.3+i*.07;
+    h+=`<rect class="grow f-gold" fill-opacity=".55" x="${x.toFixed(1)}" y="528" width="${w.toFixed(1)}" height="36" rx="4" style="--dl:${dl.toFixed(2)}s"/>`;
+    if(lab[i]) h+=`<text class="mono s" data-in="3" x="${(x+w/2).toFixed(1)}" y="552" text-anchor="middle" style="fill:#F5F6F8;--dl:${(dl+.6).toFixed(2)}s">${lab[i]}</text>`;
+  }
+  document.getElementById('rchain').innerHTML=h;
+})();
+
+/* ---------- slide 6: the sequence diagram ---------- */
+(function buildSeq(){
+  const X={B:200,C:520,M:840,P:1160};
+  // from, to, plain words, technical name, colour, dashed reply, travelling dots
+  const R=[
+    ['C','M','Can I see your data?','POST /mcp (no token)','fg',0,[]],
+    ['M','C','No. Get a token first.','401 + resource_metadata','red',1,[]],
+    ['C','M','where do I sign in? register me','.well-known + CIMD/register','fg',0,[]],
+    ['C','C','makes a secret + its hash, keeps the secret','verifier + challenge','yellow',0,[]],
+    ['C','B','opens a browser tab','opens /authorize','fg',0,[]],
+    ['B','M',"sign me in. Here's a hash of Claude Code's secret",'code_challenge','blue',0,['blue']],
+    ['M','B','go to the Allow page, with a signed note','302 + request token','purple',1,['purple']],
+    ['B','P',"SSO checks it's really Alex",'identity-aware proxy + SSO','grey',0,[]],
+    ['P','B','let Claude Code in, as user?','role from SSO groups','fg',1,[]],
+    ['P','B','60-second code, signed by the Allow page','302 → localhost?code=…','green',1,['green']],
+    ['B','C','delivers the code to Claude Code','localhost listener','green',0,['green']],
+    ['C','M','one-time code + the secret (direct, HTTPS)','POST /token + code_verifier','green',0,['green','yellow']],
+    ['M','C','hash of secret matches ✓ → access + refresh tokens','SHA-256(verifier) = challenge','gold',1,['gold']],
+    ['C','M','data, please (token attached)','Authorization: Bearer','gold',0,['gold']],
+  ];
+  const Y0=256, DY=38, YE=770;
+  // the stage background colour at (x,y) (same vertical gradient as #stage: #1A1E28 at y=0 to
+  // #14171F at y=900, so it depends on y only), so a label's backdrop hides the dashed lines
+  // behind it without leaving a patch
+  const bgAt=(x,y)=>{const t=Math.min(Math.max(y/900,0),1), a=[26,30,40], b=[20,23,31];
+    return `rgb(${a.map((v,k)=>Math.round(v+(b[k]-v)*t)).join(',')})`;};
+  let lines=`<rect class="frame" x="70" y="134" width="580" height="${YE+12-134}" rx="18"/>`;
+  let h='';
+  [['B',"Alex's browser"],['C','Claude Code'],['M','MCP server'],['P','Allow page']].forEach(([c,n])=>{const x=X[c];
+    lines+=`<line class="life" x1="${x}" y1="224" x2="${x}" y2="${YE}"/>`;
+    h+=`<rect class="box" x="${x-110}" y="158" width="220" height="56" rx="12"/><text class="t" x="${x}" y="195" text-anchor="middle" style="font-size:25px">${n}</text>`;});
+  h+=`<g>${lines}</g><text class="t sl dim halo" x="360" y="141" text-anchor="middle" style="stroke:${bgAt(360,141)}">Alex's laptop</text>`;
+  h+=`<rect x="993" y="230" width="14" height="${YE-230}" fill="url(#hatch)" stroke="#BDB3A3" stroke-opacity=".5"/><text class="t s c-grey" x="1000" y="194" text-anchor="middle">SSO</text>`;
+  h+=`<text class="mono s dim" x="1296" y="194">technical name</text>`;
+  R.forEach(([f,t,plain,tech,col,dash,pk],i)=>{
+    const y=Y0+i*DY, c=col==='fg'?'#C9CED8':`var(--${col})`;
+    // backdrop: outside the row group, so it stays solid while the row text is dimmed
+    const lx=f===t?X[f]+200:(X[f]+X[t])/2, bc=bgAt(lx,y);
+    const bd=`style="fill:${bc};stroke:${bc};stroke-width:16px;stroke-linejoin:round"`;
+    h+= f===t ? `<text class="t sl" data-in="${i}" ${bd} x="${X[f]+20}" y="${y+6}">${esc(plain)}</text>`
+              : `<text class="t sl" data-in="${i}" ${bd} x="${(X[f]+X[t])/2}" y="${y-9}" text-anchor="middle">${esc(plain)}</text>`;
+    let g=`<g class="row" data-in="${i}">`;
+    if(f===t){
+      g+=`<circle cx="${X[f]}" cy="${y}" r="9" style="fill:${c}"/><text class="t sl halo" x="${X[f]+20}" y="${y+6}" style="fill:${c};stroke:${bc}">${esc(plain)}</text>`;
+    } else {
+      const dir=X[t]>X[f]?1:-1, x1=X[f]+dir*8, x2=X[t]-dir*8;
+      g+=`<path class="arr${dash?' dash':' d'}" data-in="${i}" d="M${x1} ${y} L${x2} ${y}" style="--c:${c}"/>`;
+      g+=`<text class="t sl halo" x="${(X[f]+X[t])/2}" y="${y-9}" text-anchor="middle" style="stroke:${bc}">${esc(plain)}</text>`;
+    }
+    g+=`<text class="mono s dim" x="1296" y="${y+5}">${esc(tech)}</text>`;
+    if(i===8) g+=`<g data-in="8" style="--dl:.9s"><rect x="92" y="${y-15}" width="96" height="30" rx="15" fill="#F5F6F8"/><text class="t xs c-dark" x="140" y="${y+6}" text-anchor="middle">Allow ✓</text></g>`;
+    g+='</g>';
+    if(f!==t) pk.forEach((p,j)=>{ const dir=X[t]>X[f]?1:-1;
+      g+=`<g class="mv" data-in="${i}" data-out="${i+1}" style="--x0:${X[f]+dir*16-dir*j*22}px;--y0:${y}px;--x1:${X[t]-dir*34-dir*j*22}px;--y1:${y}px;--dl:${(j*.12).toFixed(2)}s"><circle r="8" style="fill:var(--${p})"/></g>`; });
+    h+=g;
+  });
+  document.getElementById('seq').innerHTML=h;
+})();
+
+/* ---------- arrowheads + draw lengths ---------- */
+document.querySelectorAll('path.arr').forEach(p=>{
+  const L=p.getTotalLength(), e=p.getPointAtLength(L), b=p.getPointAtLength(Math.max(0,L-4));
+  const ang=Math.atan2(e.y-b.y,e.x-b.x)*180/Math.PI;
+  const h=document.createElementNS(NS,'path');
+  h.setAttribute('d','M2 0 L-13 -6.5 L-9.5 0 L-13 6.5 Z');
+  h.setAttribute('transform',`translate(${e.x.toFixed(1)} ${e.y.toFixed(1)}) rotate(${ang.toFixed(1)})`);
+  h.setAttribute('class','head');
+  if(p.getAttribute('style')) h.setAttribute('style',p.getAttribute('style'));
+  if(p.hasAttribute('data-in')) h.setAttribute('data-in',p.getAttribute('data-in'));
+  if(p.hasAttribute('data-out')) h.setAttribute('data-out',p.getAttribute('data-out'));
+  p.after(h);
+});
+document.querySelectorAll('.d').forEach(p=>p.setAttribute('pathLength','1'));
+
+/* ---------- engine ---------- */
+const stage=document.getElementById('stage');
+const slides=[...document.querySelectorAll('.slide')];
+const counts=slides.map(s=>+(s.dataset.steps||1));
+const total=counts.reduce((a,b)=>a+b,0);
+let cur=0,k=0,nw=null;
+const titleOf=s=>s.dataset.title||(s.querySelector('h2')||{}).textContent||'';
+function capText(s,kk){
+  const c=[...s.querySelectorAll('.cap')].find(el=>{const a=+el.getAttribute('data-in'),b=el.hasAttribute('data-out')?+el.getAttribute('data-out'):1e9;return kk>=a&&kk<b;});
+  return c?c.textContent:'';
+}
+function fit(){const s=Math.min(innerWidth/1600,innerHeight/900);stage.style.transform=`translate(-50%,-50%) scale(${s})`;}
+function apply(instant){
+  if(instant) document.body.classList.add('instant');
+  slides.forEach((s,i)=>s.classList.toggle('active',i===cur));
+  const s=slides[cur];
+  s.querySelectorAll('[data-in],[data-out]').forEach(el=>{
+    const a=el.hasAttribute('data-in')?+el.getAttribute('data-in'):-1;
+    const b=el.hasAttribute('data-out')?+el.getAttribute('data-out'):1e9;
+    el.classList.toggle('pre',k<a); el.classList.toggle('on',k>=a&&k<b); el.classList.toggle('past',k>=b); el.classList.toggle('now',k===a);
+  });
+  s.querySelectorAll('[data-at]').forEach(el=>{
+    el.getAttribute('data-at').split(',').forEach(v=>el.classList.toggle('at'+v.trim(),k>=+v));
+  });
+  const idx=counts.slice(0,cur).reduce((a,b)=>a+b,0)+k;
+  document.getElementById('bar').style.width=((idx+1)/total*100)+'%';
+  document.getElementById('num').textContent=`${cur+1} / ${slides.length}`;
+  try{history.replaceState(null,'',`#${cur+1}-${k+1}`);}catch(e){}
+  renderNotes();
+  if(instant){ void stage.offsetWidth; requestAnimationFrame(()=>requestAnimationFrame(()=>document.body.classList.remove('instant'))); }
+}
+function next(){ if(k<counts[cur]-1){k++;apply();} else if(cur<slides.length-1){cur++;k=0;apply();} }
+function prev(){ if(k>0){k--;apply();} else if(cur>0){cur--;k=counts[cur]-1;apply();} }
+
+/* ---------- speaker-notes window (press N) ---------- */
+const NOTES_SHELL=`<!doctype html><html><head><meta charset="utf-8"><title>Speaker notes</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"><style>
+body{margin:0;background:#14171F;color:#F5F6F8;font:20px/1.5 Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased;padding:26px 34px 60px}
+.meta{font:14px 'JetBrains Mono',Menlo,monospace;color:#8C93A1;letter-spacing:.05em}
+h1{font-size:30px;font-weight:800;letter-spacing:-.03em;margin:6px 0 10px}
+.lbl{font:600 12px Inter,system-ui,sans-serif;color:#FF444F;text-transform:uppercase;letter-spacing:.22em;margin-top:22px}
+.cap{color:#C9CED8;font-size:21px;margin-top:4px}
+.notes{font-size:23px;line-height:1.5;white-space:pre-line;margin-top:4px}
+.next{color:#8C93A1;font-size:19px;margin-top:4px}
+.keys{position:fixed;bottom:14px;left:34px;font:13px 'JetBrains Mono',Menlo,monospace;color:#5E6575}
+</style></head><body><div class="meta" id="meta"></div><h1 id="title"></h1>
+<div class="lbl">On screen</div><div class="cap" id="cap"></div>
+<div class="lbl">Say</div><div class="notes" id="notes"></div>
+<div class="lbl">Next</div><div class="next" id="next"></div>
+<div class="keys">→ / Space next · ← back · you can drive the deck from this window</div></body></html>`;
+function renderNotes(){
+  if(!nw||nw.closed) return;
+  const d=nw.document, s=slides[cur], arr=NOTES[s.id]||[];
+  if(!d.getElementById('meta')) return;
+  d.getElementById('meta').textContent=`Slide ${cur+1} / ${slides.length}   ·   step ${k+1} / ${counts[cur]}`;
+  d.getElementById('title').textContent=titleOf(s);
+  d.getElementById('cap').textContent=capText(s,k)||'—';
+  d.getElementById('notes').textContent=arr[k]||arr[arr.length-1]||'';
+  let ns=cur,nk=k+1; if(nk>=counts[cur]){ns=cur+1;nk=0;}
+  d.getElementById('next').textContent= ns<slides.length ? (nk===0?`New slide: ${titleOf(slides[ns])}. `:'')+(capText(slides[ns],nk)||'') : 'End of deck';
+}
+function openNotes(){
+  if(nw&&!nw.closed){ nw.focus(); return; }
+  nw=window.open('','mcp-deck-notes','width=760,height=860');
+  if(!nw){ alert('The browser blocked the notes window. Allow pop-ups for this page, then press N again.'); return; }
+  nw.document.open(); nw.document.write(NOTES_SHELL); nw.document.close();
+  nw.addEventListener('keydown',onKey);
+  renderNotes();
+}
+window.__deck={openNotes,notesFor:id=>NOTES[id]};
+
+function onKey(e){
+  if(['ArrowRight','ArrowDown','PageDown',' ','Enter'].includes(e.key)){e.preventDefault();next();}
+  else if(['ArrowLeft','ArrowUp','PageUp','Backspace'].includes(e.key)){e.preventDefault();prev();}
+  else if(e.key==='Home'){cur=0;k=0;apply(true);}
+  else if(e.key==='End'){cur=slides.length-1;k=counts[cur]-1;apply(true);}
+  else if(e.key==='n'||e.key==='N'){openNotes();}
+  else if(e.key==='f'||e.key==='F'){ if(document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(()=>{}); }
+}
+function fromHash(){
+  const m=/^#(\d+)(?:-(\d+))?$/.exec(location.hash);
+  if(!m) return false;
+  cur=Math.min(slides.length-1,Math.max(0,+m[1]-1));
+  k=Math.min(counts[cur]-1,Math.max(0,(+m[2]||1)-1));
+  return true;
+}
+addEventListener('keydown',onKey);
+stage.addEventListener('click',e=>{ if(e.button===0) next(); });
+addEventListener('resize',fit);
+addEventListener('hashchange',()=>{ const pc=cur,pk=k; if(fromHash()&&(pc!==cur||pk!==k)) apply(true); });
+fit();
+fromHash();
+apply(true);
+})();
+</script>
+</body>
+</html>
