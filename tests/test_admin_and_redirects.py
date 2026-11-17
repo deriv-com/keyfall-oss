@@ -62,4 +62,6 @@ def test_blocked_domains_and_extra_app_callbacks(monkeypatch):
     monkeypatch.setenv("MCP_EXTRA_REDIRECTS", "myagent://cb")
     for f in (msa.redirect_uri_allowed, allow_page.redirect_uri_allowed):
         assert f("https://agent.example.com/cb") is False
+        assert f("https://agent.example.com./cb") is False      # trailing dot: same host, still blocked
+        assert f("https://EXAMPLE.COM./cb") is False
         assert f("myagent://cb") is True

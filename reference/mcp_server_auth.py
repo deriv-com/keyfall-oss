@@ -49,7 +49,7 @@ import secrets
 import socket
 import time
 from typing import Any, Callable, Optional
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import httpx
 import jwt  # PyJWT
@@ -174,7 +174,7 @@ def redirect_uri_allowed(uri: str) -> bool:
         return False
     if parts.fragment or not parts.hostname:
         return False
-    host = parts.hostname.lower()
+    host = parts.hostname.lower().rstrip(".")   # "example.com." is the same host as "example.com"
     if any(host == d or host.endswith("." + d) for d in _env_set("MCP_BLOCKED_REDIRECT_DOMAINS")):
         return False
     if parts.scheme == "https":
@@ -225,6 +225,8 @@ def _cimd_url_ok(url: str) -> bool:
         return False
     if p.scheme != "https" or not p.hostname or p.username or p.password or p.query or p.fragment:
         return False
+    if p.hostname.endswith("."):   # one spelling per host, so trusted-host and cache keys can't be dodged
+        return False
     if p.path in ("", "/") or "/." in p.path:
         return False
     try:
@@ -236,30 +238,40 @@ def _cimd_url_ok(url: str) -> bool:
     return not trusted or p.hostname.lower() in trusted
 
 
-async def _resolves_publicly(host: str, port: int) -> bool:
-    """Refuse hosts that resolve to private, loopback or link-local addresses (SSRF guard)."""
+async def _pinned_address(host: str, port: int) -> Optional[str]:
+    """Resolve once; return an address to connect to, or None if any answer is not public.
+
+    Every answer must be a public address (no private, loopback, link-local, multicast or
+    reserved ranges). The download then connects to this exact address, so a DNS server can't
+    answer "public" for the check and "internal" for the connection (DNS rebinding).
+    """
     try:
         infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except OSError:
-        return False
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if not ip.is_global or ip.is_multicast:
-            return False
-    return bool(infos)
+        return None
+    ips = sorted({info[4][0] for info in infos})
+    for ip in ips:
+        addr = ipaddress.ip_address(ip)
+        if not addr.is_global or addr.is_multicast:
+            return None
+    return ips[0] if ips else None
 
 
 async def fetch_client_document(url: str) -> tuple[dict, int]:
     """Download a metadata document. Returns (document, cache seconds). Raises ValueError.
 
-    Residual risk: DNS can change between the check and the fetch. Set MCP_CIMD_TRUSTED_HOSTS
-    if your agents' vendors are known in advance.
+    Connects to the address that was checked, with the real hostname as Host and as the TLS
+    server name, so the certificate is still verified for the vendor's domain.
     """
     p = urlsplit(url)
-    if not await _resolves_publicly(p.hostname, p.port or 443):
+    port = p.port or 443
+    ip = await _pinned_address(p.hostname, port)
+    if ip is None:
         raise ValueError("client_id host is not public")
+    pinned = urlunsplit(("https", f"[{ip}]:{port}" if ":" in ip else f"{ip}:{port}", p.path, "", ""))
+    headers = {"Accept": "application/json", "Host": p.netloc}
     async with httpx.AsyncClient(timeout=CIMD_TIMEOUT_SECONDS, follow_redirects=False) as http:
-        async with http.stream("GET", url, headers={"Accept": "application/json"}) as resp:
+        async with http.stream("GET", pinned, headers=headers, extensions={"sni_hostname": p.hostname}) as resp:
             if resp.status_code != 200:
                 raise ValueError(f"client_id document answered {resp.status_code}")
             body = b""

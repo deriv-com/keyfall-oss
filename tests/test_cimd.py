@@ -68,6 +68,7 @@ def test_other_loopback_paths_and_hosts_still_must_match(cimd_world):
 @pytest.mark.parametrize("url", [
     "https://127.0.0.1/client.json", "https://agent.example.com/", "https://agent.example.com/c.json?x=1",
     "https://user:pw@agent.example.com/c.json", "https://agent.example.com/../c.json",
+    "https://agent.example.com./c.json",
 ])
 def test_unsafe_client_id_urls_are_refused_before_any_fetch(url):
     assert msa._cimd_url_ok(url) is False
@@ -79,7 +80,7 @@ def test_trusted_hosts_limit_who_can_be_a_client(monkeypatch):
 
 
 def test_hosts_resolving_to_private_addresses_are_refused():
-    assert asyncio.run(msa._resolves_publicly("localhost", 443)) is False
+    assert asyncio.run(msa._pinned_address("localhost", 443)) is None
 
 
 def test_documents_are_cached(cimd_world):

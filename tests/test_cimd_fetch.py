@@ -1,4 +1,4 @@
-"""The real metadata-document download: size cap, no redirects, status, cache time, JSON."""
+"""The real metadata-document download: pinned address, size cap, no redirects, status, cache time, JSON."""
 from __future__ import annotations
 
 import asyncio
@@ -10,28 +10,43 @@ import mcp_server_auth as msa
 
 URL = "https://agent.example.com/oauth/client.json"
 DOC = b'{"client_id": "https://agent.example.com/oauth/client.json", "redirect_uris": ["http://127.0.0.1/cb"]}'
+PUBLIC_IP = "93.184.216.34"
 
 
 @pytest.fixture
 def serve(monkeypatch):
-    """serve(response) makes the next download answer with that httpx.Response."""
+    """serve(response) makes the next download answer with that httpx.Response; requests are recorded."""
     real = httpx.AsyncClient
-    holder = {}
+    holder = {"requests": []}
 
-    async def public(*_):
-        return holder.get("public", True)
+    async def pinned(*_):
+        return holder.get("ip", PUBLIC_IP)
 
-    monkeypatch.setattr(msa, "_resolves_publicly", public)
-    monkeypatch.setattr(msa.httpx, "AsyncClient",
-                        lambda **kw: real(transport=httpx.MockTransport(lambda req: holder["resp"]), **kw))
+    def answer(req):
+        holder["requests"].append(req)
+        return holder["resp"]
 
-    def set_response(resp, public=True):
-        holder["resp"], holder["public"] = resp, public
+    monkeypatch.setattr(msa, "_pinned_address", pinned)
+    monkeypatch.setattr(msa.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(answer), **kw))
+
+    def set_response(resp, ip=PUBLIC_IP):
+        holder["resp"], holder["ip"] = resp, ip
+        return holder["requests"]
     return set_response
 
 
 def fetch():
     return asyncio.run(msa.fetch_client_document(URL))
+
+
+def test_connects_to_the_checked_address_with_the_real_host_name(serve):
+    """No second DNS lookup: the request goes to the pinned IP; Host and TLS name stay the vendor's."""
+    seen = serve(httpx.Response(200, content=DOC))
+    fetch()
+    req = seen[0]
+    assert req.url.host == PUBLIC_IP and req.url.path == "/oauth/client.json"
+    assert req.headers["host"] == "agent.example.com"
+    assert req.extensions["sni_hostname"] == "agent.example.com"
 
 
 @pytest.mark.parametrize("header,seconds", [
@@ -59,6 +74,18 @@ def test_bad_downloads_are_refused(serve, resp, why):
 
 
 def test_private_hosts_are_refused_before_downloading(serve):
-    serve(httpx.Response(200, content=DOC), public=False)
+    seen = serve(httpx.Response(200, content=DOC), ip=None)
     with pytest.raises(ValueError, match="not public"):
         fetch()
+    assert seen == []
+
+
+def test_any_private_answer_refuses_the_host(monkeypatch):
+    """A name that resolves to one public and one internal address is refused outright."""
+    async def answers(host, port, type):  # noqa: A002
+        return [(None, None, None, None, ("93.184.216.34", port)), (None, None, None, None, ("10.0.0.5", port))]
+
+    loop = asyncio.new_event_loop()
+    monkeypatch.setattr(loop, "getaddrinfo", answers)
+    assert loop.run_until_complete(msa._pinned_address("agent.example.com", 443)) is None
+    loop.close()

@@ -95,8 +95,9 @@ MCP_SCOPE=mcp
 
 Client ID Metadata Documents: `/authorize` is reachable by anyone, and a `client_id` that is an
 https URL makes the server download it. The download refuses private addresses, redirects and
-anything over 10 KB, but DNS can still change between the check and the fetch. In production,
-set `MCP_CIMD_TRUSTED_HOSTS` to the vendors your people use. Agents using a metadata URL from any
+anything over 10 KB, and connects to the exact address it checked (so DNS rebinding can't swap in
+an internal one). In production, also set `MCP_CIMD_TRUSTED_HOSTS` to the vendors your people
+use, so the server only ever fetches from them. Agents using a metadata URL from any
 other host are refused (they don't fall back to `/register` on their own); if that's a problem,
 set `MCP_CIMD_ENABLED=false` so the server stops offering CIMD and every agent uses `/register`.
 

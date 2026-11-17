@@ -154,7 +154,8 @@ no secret, and SHA-256 can't be reversed to find it.
 | Agent tricked into sending the code elsewhere | callback allowlist, checked at registration, `/authorize` and on the Allow page; the code is bound to the callback |
 | Someone tampers with the request in the browser | the signed note: changing the callback or hash breaks the signature |
 | A local app pretending to be a well-known agent | "Verified" only for https callbacks on the vendor's own domain; otherwise the page says the app can't be confirmed, and "Only allow an agent you started yourself, just now" |
-| Using the server to fetch internal URLs (CIMD) | https only, no IP literals, hosts that resolve to private addresses refused, no redirects, 10 KB cap; `MCP_CIMD_TRUSTED_HOSTS` to allow only known vendors |
+| Using the server to fetch internal URLs (CIMD) | https only, no IP literals, every resolved address must be public and the connection goes to that checked address (no DNS rebinding), no redirects, 10 KB cap; `MCP_CIMD_TRUSTED_HOSTS` to allow only known vendors |
+| Dodging the blocked-domain list (`example.com.`) | host names are compared without the trailing dot; metadata URLs ending in a dot are refused |
 | Clickjacking the Allow button | `frame-ancestors 'none'`, `X-Frame-Options: DENY` |
 | A forged Allow submission | CSRF token tied to the person and the signed note |
 | A forged code | HS256 signature with the shared key; distinct audiences |

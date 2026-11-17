@@ -171,7 +171,7 @@ def redirect_uri_allowed(uri: str) -> bool:
         return False
     if parts.fragment or not parts.hostname:
         return False
-    host = parts.hostname.lower()
+    host = parts.hostname.lower().rstrip(".")   # "example.com." is the same host as "example.com"
     if any(host == d or host.endswith("." + d) for d in _env_set("MCP_BLOCKED_REDIRECT_DOMAINS")):
         return False
     if parts.scheme == "https":
