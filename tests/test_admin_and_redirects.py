@@ -1,6 +1,8 @@
 """Admin revoke/restore, and the two copies of the redirect allowlist agreeing."""
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 import admin
@@ -48,6 +50,16 @@ TABLE = [
     ("vscode://some/cb", False),
     ("javascript:alert(1)", False),
     ("https:///nohost", False),
+    ("HTTP://LOCALHOST:5555/cb", True),
+    ("http://[::ffff:7f00:1]:5555/cb", True),
+    ("http://localhost.evil.example.com/cb", False),
+    ("http://evil.example.com\\@127.0.0.1/cb", False),   # Python: 127.0.0.1; browsers: evil.example.com
+    ("http://user:pw@127.0.0.1:5555/cb", False),
+    ("http://@127.0.0.1:5555/cb", False),
+    ("https://agent.example.com/cb#", False),             # an empty fragment is still a fragment
+    ("http://127.0.0.1:5555/c b", False),
+    ("http://127.0.0.1:5555/cb\n", False),
+    ("https://ex\u00e4mple.com/cb", False),                # raw IDN: only the xn-- form is accepted
 ]
 
 
@@ -65,3 +77,19 @@ def test_blocked_domains_and_extra_app_callbacks(monkeypatch):
         assert f("https://agent.example.com./cb") is False      # trailing dot: same host, still blocked
         assert f("https://EXAMPLE.COM./cb") is False
         assert f("myagent://cb") is True
+
+
+SHARED = ("_env_set", "app_redirects", "_is_loopback", "redirect_uri_allowed", "display_name")
+
+
+@pytest.mark.parametrize("name", SHARED)
+def test_the_two_copies_are_identical(name):
+    """allow_page.py and mcp_server_auth.py run on different hosts, so the shared checks are copies."""
+    assert inspect.getsource(getattr(msa, name)) == inspect.getsource(getattr(allow_page, name))
+
+
+def test_the_two_copies_share_their_constants():
+    for name in ("LOOPBACK_HOSTS", "DEFAULT_APP_REDIRECTS", "REQUEST_ISSUER", "REQUEST_AUDIENCE", "CODE_ISSUER",
+                 "CODE_AUDIENCE", "MIN_KEY_BYTES"):
+        assert getattr(msa, name) == getattr(allow_page, name), name
+    assert msa.PKCE_CHALLENGE.pattern == allow_page.PKCE_CHALLENGE.pattern

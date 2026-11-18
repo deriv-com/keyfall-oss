@@ -184,11 +184,16 @@ def redirect_uri_allowed(uri: str) -> bool:
     """https (except blocked domains), http only back to this computer, or a listed app callback."""
     if uri in app_redirects():
         return True
+    # One reading for every parser: no spaces, control or non-ASCII characters, backslashes,
+    # user:pass@ or fragments. Python reads "http://evil.com\\@127.0.0.1/" as 127.0.0.1; a browser
+    # reads it as evil.com.
+    if not uri.isascii() or any(c <= " " or c in "\x7f\\#" for c in uri):
+        return False
     try:
         parts = urlsplit(uri)
     except ValueError:
         return False
-    if parts.fragment or not parts.hostname:
+    if not parts.hostname or "@" in parts.netloc:
         return False
     host = parts.hostname.lower().rstrip(".")   # "example.com." is the same host as "example.com"
     if any(host == d or host.endswith("." + d) for d in _env_set("MCP_BLOCKED_REDIRECT_DOMAINS")):
