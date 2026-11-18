@@ -78,7 +78,7 @@ from mcp.server.transport_security import (
     TransportSecuritySettings,
 )
 from mcp.shared.auth import InvalidRedirectUriError, OAuthClientInformationFull, OAuthToken
-from pydantic import AnyHttpUrl, AnyUrl
+from pydantic import AnyUrl
 from redis.exceptions import WatchError
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
@@ -825,13 +825,8 @@ def build_mcp(register_tools: Callable[[MCPServer, Any], None], redis=None, *, n
     redis = redis if redis is not None else redis_client()
     registration = ClientRegistrationOptions(enabled=True, valid_scopes=[SCOPE], default_scopes=[SCOPE])
     revocation = RevocationOptions(enabled=True)
-    # Served ahead of the SDK's own metadata route (below), which advertises neither of these yet.
-    metadata = build_metadata(AnyHttpUrl(ISSUER_URL), None, registration, revocation)
-    metadata.authorization_response_iss_parameter_supported = True     # RFC 9207, see _authorize_endpoint
-    metadata.client_id_metadata_document_supported = CIMD_ENABLED or None
-    body = metadata.model_dump(mode="json", exclude_none=True)
     provider = AllowPageOAuthProvider(redis, resource_url=RESOURCE_URL, allow_page_url=ALLOW_PAGE_URL,
-                                      issuer=body["issuer"], fetch_document=fetch_document)
+                                      fetch_document=fetch_document)
     mcp = MCPServer(
         name=name,
         title=title,
@@ -847,6 +842,13 @@ def build_mcp(register_tools: Callable[[MCPServer, Any], None], redis=None, *, n
         ),
     )
     register_tools(mcp, redis)
+    # Served ahead of the SDK's own metadata route (below), which advertises neither flag yet. Built
+    # from the SDK's settings so "issuer" is spelled exactly as in the protected-resource metadata.
+    metadata = build_metadata(mcp.settings.auth.issuer_url, None, registration, revocation)
+    metadata.authorization_response_iss_parameter_supported = True     # RFC 9207, see _authorize_endpoint
+    metadata.client_id_metadata_document_supported = CIMD_ENABLED or None
+    body = metadata.model_dump(mode="json", exclude_none=True)
+    provider.issuer = body["issuer"]
     app = mcp.streamable_http_app(
         streamable_http_path="/mcp",
         # A public server behind a proxy; DNS-rebinding protection is for localhost-only servers.

@@ -47,6 +47,7 @@ def test_metadata_points_agents_at_this_server_and_offers_cimd(world):
     assert asm["code_challenge_methods_supported"] == ["S256"]
     assert asm["client_id_metadata_document_supported"] is True
     assert asm["authorization_response_iss_parameter_supported"] is True
+    assert asm["issuer"] == pr["authorization_servers"][0]       # exactly: clients compare the strings
 
 
 def test_mcp_without_token_is_401_with_sign_in_hint(world):
