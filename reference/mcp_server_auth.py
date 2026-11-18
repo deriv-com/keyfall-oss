@@ -29,6 +29,7 @@ Environment
     MCP_REDIS_PREFIX           key prefix shared with the Allow page (default "keyfall:")
     MCP_EXTRA_REDIRECTS        comma-separated extra app callbacks (same value on both hosts)
     MCP_BLOCKED_REDIRECT_DOMAINS  comma-separated domains an approval may never return to
+    MCP_WEB_REDIRECT_DOMAINS   optional: the only websites an approval may return to
     MCP_REFRESH_GRACE_SECONDS  concurrent-refresh grace window (default 30, max 120)
     MCP_REFRESH_REUSE_ACTION   "end_grant" (default) or "log" when an old refresh token comes back
     MCP_CIMD_ENABLED           accept Client ID Metadata Documents (default true)
@@ -199,9 +200,14 @@ def redirect_uri_allowed(uri: str) -> bool:
     host = parts.hostname.lower().rstrip(".")   # "example.com." is the same host as "example.com"
     if any(host == d or host.endswith("." + d) for d in _env_set("MCP_BLOCKED_REDIRECT_DOMAINS")):
         return False
-    if parts.scheme == "https":
-        return True
-    return parts.scheme == "http" and _is_loopback(host)
+    if _is_loopback(host):
+        return parts.scheme in ("http", "https")
+    if parts.scheme != "https":
+        return False
+    # Optional: only these websites may receive codes. Unset, any https site may, and the person
+    # deciding on the Allow page (which names the site) is the only check.
+    web = _env_set("MCP_WEB_REDIRECT_DOMAINS")
+    return not web or any(host == d or host.endswith("." + d) for d in web)
 
 
 # --- Client ID Metadata Documents (CIMD) ---------------------------------------------------

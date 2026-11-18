@@ -106,3 +106,15 @@ def test_cli_prints_escapes_not_terminal_controls(world, monkeypatch, capsys):
     assert admin.main(["events"]) == 0
     out = capsys.readouterr().out
     assert "\x1b" not in out and "‮" not in out and "\\x1b[1A" in out and "\\u202e" in out
+
+
+def test_web_callbacks_can_be_limited_to_listed_domains(monkeypatch):
+    """Open DCR lets anyone name an https callback; MCP_WEB_REDIRECT_DOMAINS narrows it to known sites."""
+    monkeypatch.setenv("MCP_WEB_REDIRECT_DOMAINS", "agent.example.com")
+    for f in (msa.redirect_uri_allowed, allow_page.redirect_uri_allowed):
+        assert f("https://app.agent.example.com/oauth/callback") is True
+        assert f("https://agent.example.com./cb") is True
+        assert f("https://phish.example.net/cb") is False
+        assert f("https://evilagent.example.com/cb") is False
+        assert f("http://127.0.0.1:5555/callback") is True               # this computer is never a website
+        assert f("cursor://anysphere.cursor-mcp/oauth/callback") is True

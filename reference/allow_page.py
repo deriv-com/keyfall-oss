@@ -30,7 +30,8 @@ Environment
                           (default "mcp-admin=admin,mcp-user=user,mcp-readonly=readonly")
     MCP_DEFAULT_ROLE      optional role for people with no matching group (e.g. readonly)
     MCP_APP_NAME          shown on the page (default "My App")
-    MCP_REDIS_PREFIX, MCP_EXTRA_REDIRECTS, MCP_BLOCKED_REDIRECT_DOMAINS   same values as the MCP server
+    MCP_REDIS_PREFIX, MCP_EXTRA_REDIRECTS, MCP_BLOCKED_REDIRECT_DOMAINS, MCP_WEB_REDIRECT_DOMAINS
+                          same values as the MCP server
     REDIS_URL             the MCP server's Redis
 """
 from __future__ import annotations
@@ -181,9 +182,14 @@ def redirect_uri_allowed(uri: str) -> bool:
     host = parts.hostname.lower().rstrip(".")   # "example.com." is the same host as "example.com"
     if any(host == d or host.endswith("." + d) for d in _env_set("MCP_BLOCKED_REDIRECT_DOMAINS")):
         return False
-    if parts.scheme == "https":
-        return True
-    return parts.scheme == "http" and _is_loopback(host)
+    if _is_loopback(host):
+        return parts.scheme in ("http", "https")
+    if parts.scheme != "https":
+        return False
+    # Optional: only these websites may receive codes. Unset, any https site may, and the person
+    # deciding on the Allow page (which names the site) is the only check.
+    web = _env_set("MCP_WEB_REDIRECT_DOMAINS")
+    return not web or any(host == d or host.endswith("." + d) for d in web)
 
 
 # --- the two tokens ------------------------------------------------------------------------
