@@ -138,3 +138,13 @@ def test_authorize_refuses_a_challenge_that_is_not_s256(world):
         r = world.mcp.get("/authorize", params={"response_type": "code", "client_id": cid, "redirect_uri": REDIRECT,
                                                 "code_challenge": challenge, "state": "s"})
         assert r.status_code == 302 and "error=invalid_request" in r.headers["location"], challenge
+
+
+def test_registration_size_is_capped(world):
+    """/register is open to anyone; one call must not park megabytes in Redis for 90 days."""
+    assert world.register(name="N" * 200_000).status_code == 400
+    r = world.mcp.post("/register", json={"redirect_uris": [f"http://127.0.0.1:{p}/cb" for p in range(1, 12)],
+                                          "token_endpoint_auth_method": "none"})
+    assert r.status_code == 400 and r.json()["error"] == "invalid_redirect_uri"
+    assert not world.r.keys("t:client:*")
+    assert world.register().status_code == 201

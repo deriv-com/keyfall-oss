@@ -98,6 +98,8 @@ PKCE_CHALLENGE = re.compile(r"[A-Za-z0-9_-]{43}")   # base64url(SHA-256(verifier
 ACCESS_TTL_SECONDS = 3600            # 1 hour
 GRANT_TTL_SECONDS = 14 * 24 * 3600   # a chain of refresh tokens never outlives the Allow by more than this
 CLIENT_TTL_SECONDS = 90 * 24 * 3600  # a registered (DCR) agent is kept 90 days
+# /register is open to anyone: keep what one registration can store small.
+MAX_REDIRECT_URIS, MAX_REDIRECT_URI_LENGTH, MAX_CLIENT_RECORD_BYTES = 10, 2000, 8192
 CODE_USED_TTL_SECONDS = 300          # remembers used codes well past their 60 s life
 REFRESH_GRACE_SECONDS = min(max(int(os.environ.get("MCP_REFRESH_GRACE_SECONDS", "30")), 0), 120)
 # A rotated refresh token used again after the grace window: "end_grant" ends the whole chain
@@ -444,14 +446,20 @@ class AllowPageOAuthProvider:
         uris = [str(u) for u in (client_info.redirect_uris or [])]
         if not uris:
             raise RegistrationError("invalid_redirect_uri", "At least one redirect_uri is required")
+        if len(uris) > MAX_REDIRECT_URIS or any(len(u) > MAX_REDIRECT_URI_LENGTH for u in uris):
+            raise RegistrationError(
+                "invalid_redirect_uri",
+                f"At most {MAX_REDIRECT_URIS} redirect_uris of up to {MAX_REDIRECT_URI_LENGTH} characters",
+            )
         if any(not redirect_uri_allowed(u) for u in uris):
             raise RegistrationError(
                 "invalid_redirect_uri",
                 "redirect_uri must be https, http to localhost, or a supported app callback",
             )
-        await self.redis.set(
-            f"{PREFIX}client:{client_info.client_id}", client_info.model_dump_json(), ex=CLIENT_TTL_SECONDS
-        )
+        record = client_info.model_dump_json()
+        if len(record) > MAX_CLIENT_RECORD_BYTES:
+            raise RegistrationError("invalid_client_metadata", "Client metadata is too large")
+        await self.redis.set(f"{PREFIX}client:{client_info.client_id}", record, ex=CLIENT_TTL_SECONDS)
 
     # approval hand-off -----------------------------------------------------------------
 
