@@ -93,3 +93,14 @@ def test_the_two_copies_share_their_constants():
                  "CODE_AUDIENCE", "MIN_KEY_BYTES"):
         assert getattr(msa, name) == getattr(allow_page, name), name
     assert msa.PKCE_CHALLENGE.pattern == allow_page.PKCE_CHALLENGE.pattern
+
+
+def test_cli_prints_escapes_not_terminal_controls(world, monkeypatch, capsys):
+    """Audit fields can carry anything (older events, other writers): escapes must not reach the terminal."""
+    monkeypatch.setattr(admin, "AUDIT_STREAM", "t:audit")
+    monkeypatch.setattr(admin.redis_lib.Redis, "from_url", staticmethod(lambda *a, **k: world.r))
+    world.r.xadd("t:audit", {"event": "tool_call", "email": "a@example.com", "ts": "1",
+                             "args": "\x1b[1A\x1b[2Khidden", "client_name": "x‮y"})
+    assert admin.main(["events"]) == 0
+    out = capsys.readouterr().out
+    assert "\x1b" not in out and "‮" not in out and "\\x1b[1A" in out and "\\u202e" in out

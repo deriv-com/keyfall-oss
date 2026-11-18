@@ -106,3 +106,12 @@ def test_revoke_landing_during_code_exchange_wins(world, monkeypatch):
     assert r.status_code == 400 and r.json()["error"] == "invalid_grant"
     world.r.delete("t:revoked:alice@example.com")       # restore: nothing from before comes back
     assert not world.r.keys("t:grant:*") and not world.r.keys("t:access:*")
+
+
+def test_a_mistyped_reuse_action_still_ends_the_grant(world, monkeypatch):
+    monkeypatch.setattr(msa, "REFRESH_GRACE_SECONDS", 0)
+    monkeypatch.setattr(msa, "REFRESH_REUSE_ACTION", "end-grant")     # typo for end_grant
+    client_id, first = world.connect()
+    second = world.refresh(client_id, first["refresh_token"]).json()
+    assert world.refresh(client_id, first["refresh_token"]).status_code == 400
+    assert world.call(second["access_token"]).status_code == 401

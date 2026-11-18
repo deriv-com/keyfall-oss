@@ -86,6 +86,13 @@ def recent_events(r, limit: int = 30, email: Optional[str] = None) -> List[Dict[
     return out
 
 
+def _safe(value: Any) -> str:
+    """Agent names, tool arguments and other audit fields come from outside: print control and
+    bidi characters as escapes, so they can't move the cursor, erase lines or retitle the terminal."""
+    return "".join(c if c.isprintable() else (f"\\x{ord(c):02x}" if ord(c) < 0x100 else f"\\u{ord(c):04x}")
+                   for c in str(value))
+
+
 def _when(ts: int) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC") if ts else "-"
 
@@ -108,7 +115,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "connections":
         rows = list_connections(r, args.email)
         for x in rows:
-            print(f"{x['email']:<32} {x['role']:<9} {x['agent'][:28]:<28} "
+            print(f"{_safe(x['email']):<32} {_safe(x['role']):<9} {_safe(x['agent'][:28]):<28} "
                   f"since {_when(x['connected_at'])}  ends {_when(x['ends_at'])}")
         print(f"{len(rows)} connected agent(s)")
     elif args.cmd == "revoke":
@@ -118,8 +125,10 @@ def main(argv: Optional[List[str]] = None) -> int:
               else f"{_norm(args.email)} was not revoked.")
     else:
         for ev in recent_events(r, args.limit, args.email):
-            extra = " ".join(f"{k}={v}" for k, v in ev.items() if k not in ("event", "email", "ts") and v)
-            print(f"{_when(int(ev.get('ts', 0)))}  {ev.get('event', ''):<17} {ev.get('email', ''):<30} {extra}")
+            extra = " ".join(f"{_safe(k)}={_safe(v)}" for k, v in ev.items()
+                             if k not in ("event", "email", "ts") and v)
+            ts = int(ev["ts"]) if str(ev.get("ts", "")).isdigit() else 0
+            print(f"{_when(ts)}  {_safe(ev.get('event', '')):<17} {_safe(ev.get('email', '')):<30} {extra}")
     return 0
 
 

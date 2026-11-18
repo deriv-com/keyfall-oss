@@ -100,10 +100,11 @@ GRANT_TTL_SECONDS = 14 * 24 * 3600   # a chain of refresh tokens never outlives 
 CLIENT_TTL_SECONDS = 90 * 24 * 3600  # a registered (DCR) agent is kept 90 days
 # /register is open to anyone: keep what one registration can store small.
 MAX_REDIRECT_URIS, MAX_REDIRECT_URI_LENGTH, MAX_CLIENT_RECORD_BYTES = 10, 2000, 8192
-CODE_USED_TTL_SECONDS = 300          # remembers used codes well past their 60 s life
+CODE_USED_TTL_SECONDS = 300          # remembers used codes this long past their expiry
 REFRESH_GRACE_SECONDS = min(max(int(os.environ.get("MCP_REFRESH_GRACE_SECONDS", "30")), 0), 120)
 # A rotated refresh token used again after the grace window: "end_grant" ends the whole chain
 # (the thief and the person both lose it; the person clicks Allow again), "log" only records it.
+# Any other value (a typo) ends the grant: a security switch fails closed.
 REFRESH_REUSE_ACTION = os.environ.get("MCP_REFRESH_REUSE_ACTION", "end_grant")
 
 PREFIX = os.environ.get("MCP_REDIS_PREFIX", "keyfall:")
@@ -476,7 +477,8 @@ class AllowPageOAuthProvider:
         if params.resource and params.resource.rstrip("/") != self.resource_url.rstrip("/"):
             raise AuthorizeError("invalid_target", "Unknown resource")
         if not PKCE_CHALLENGE.fullmatch(params.code_challenge or ""):
-            raise AuthorizeError("invalid_request", "code_challenge must be an S256 challenge (43 base64url characters)")
+            raise AuthorizeError("invalid_request",
+                                 "code_challenge must be an S256 challenge (43 base64url characters)")
         now = int(time.time())
         req = jwt.encode(
             {
@@ -542,9 +544,10 @@ class AllowPageOAuthProvider:
     async def exchange_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: AppAuthCode
     ) -> OAuthToken:
-        # Atomic single use: the second exchange of the same code loses the SET NX.
-        if not await self.redis.set(f"{PREFIX}code-used:{authorization_code.jti}", "1",
-                                    nx=True, ex=CODE_USED_TTL_SECONDS):
+        # Atomic single use: the second exchange of the same code loses the SET NX. Kept until well
+        # after the code's own expiry, so clock drift between the hosts can't reopen a replay.
+        remember = max(int(authorization_code.expires_at - time.time()), 0) + CODE_USED_TTL_SECONDS
+        if not await self.redis.set(f"{PREFIX}code-used:{authorization_code.jti}", "1", nx=True, ex=remember):
             raise TokenError("invalid_grant", "Authorization code already used")
         now = int(time.time())
         grant_id = secrets.token_urlsafe(16)
@@ -686,7 +689,7 @@ class AllowPageOAuthProvider:
         return None
 
     async def _refresh_reused(self, grant_id: str) -> None:
-        if REFRESH_REUSE_ACTION == "end_grant":
+        if REFRESH_REUSE_ACTION != "log":
             await self.end_grant(grant_id, reason="refresh_token_reuse")
             return
         subject = await self.redis.hget(f"{PREFIX}grant:{grant_id}", "subject") or ""
@@ -794,7 +797,8 @@ def _no_open_redirect(handler: Callable[[Request], Any], allow_page_url: str) ->
             return resp
         q = dict(parse_qsl(p.query))
         body = {k: q[k] for k in ("error", "error_description", "state") if k in q}
-        return JSONResponse(body or {"error": "invalid_request"}, status_code=400, headers={"Cache-Control": "no-store"})
+        return JSONResponse(body or {"error": "invalid_request"}, status_code=400,
+                            headers={"Cache-Control": "no-store"})
     return authorize
 
 
@@ -832,8 +836,8 @@ def build_mcp(register_tools: Callable[[MCPServer, Any], None], redis=None, *, n
     # Ahead of the SDK's own /authorize route: same handler, but its errors never send the
     # browser on to a website (see _no_open_redirect).
     authorize = request_response(_no_open_redirect(AuthorizationHandler(provider).handle, ALLOW_PAGE_URL))
-    app.router.routes.insert(0, Route("/authorize", RequestBodyLimitMiddleware(authorize, DEFAULT_MAX_REQUEST_BODY_SIZE),
-                                      methods=["GET", "POST"]))
+    limited = RequestBodyLimitMiddleware(authorize, DEFAULT_MAX_REQUEST_BODY_SIZE)
+    app.router.routes.insert(0, Route("/authorize", limited, methods=["GET", "POST"]))
     if CIMD_ENABLED:
         # The SDK's metadata does not advertise CIMD yet. Serve the same document with the flag
         # set, ahead of the SDK's own route, so agents that support it skip /register.

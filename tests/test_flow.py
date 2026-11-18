@@ -148,3 +148,12 @@ def test_registration_size_is_capped(world):
     assert r.status_code == 400 and r.json()["error"] == "invalid_redirect_uri"
     assert not world.r.keys("t:client:*")
     assert world.register().status_code == 201
+
+
+def test_used_code_is_remembered_until_after_it_expires(world):
+    """If the Allow page's clock runs ahead, its code's exp is later: the replay guard must outlast it."""
+    client_id, verifier, code = world.sign_in()
+    claims = jwt.decode(code, options={"verify_signature": False})
+    ahead = jwt.encode({**claims, "exp": claims["exp"] + 3600}, "k" * 64, algorithm="HS256")
+    assert world.token(client_id, verifier, ahead).status_code == 200
+    assert world.r.ttl(f"t:code-used:{claims['jti']}") > 3600
