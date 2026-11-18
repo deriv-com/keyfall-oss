@@ -130,3 +130,11 @@ def test_authorize_errors_never_bounce_to_a_website(world):
     local = world.register().json()["client_id"]
     r = world.mcp.get("/authorize", params={**good, "client_id": local, "redirect_uri": REDIRECT, "scope": "bogus"})
     assert r.status_code == 302 and r.headers["location"].startswith(REDIRECT + "?error=invalid_scope")
+
+
+def test_authorize_refuses_a_challenge_that_is_not_s256(world):
+    cid = world.register().json()["client_id"]
+    for challenge in ("short", "x" * 6000, pkce()[1] + "="):
+        r = world.mcp.get("/authorize", params={"response_type": "code", "client_id": cid, "redirect_uri": REDIRECT,
+                                                "code_challenge": challenge, "state": "s"})
+        assert r.status_code == 302 and "error=invalid_request" in r.headers["location"], challenge

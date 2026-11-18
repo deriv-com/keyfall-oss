@@ -1,6 +1,7 @@
 """The Allow page refuses whenever anything is uncertain, and is safe to show."""
 from __future__ import annotations
 
+import inspect
 import time
 from urllib.parse import parse_qs, urlsplit
 
@@ -92,6 +93,8 @@ def test_bad_expired_and_wrong_key_notes_are_refused(world):
         jwt.encode({**base, "redirect_uri": "http://evil.example.com/cb"}, KEY, algorithm="HS256"),
         jwt.encode({**base, "iat": now - 700, "exp": now + 600}, KEY, algorithm="HS256"),
         jwt.encode({**base, "aud": allow_page.CODE_AUDIENCE}, KEY, algorithm="HS256"),
+        jwt.encode({**base, "code_challenge": "x" * 42}, KEY, algorithm="HS256"),         # not an S256 hash
+        jwt.encode({**base, "code_challenge": "x" * 6000}, KEY, algorithm="HS256"),
     ]
     for req in cases:
         assert world.allow_page(req).status_code == 400, req
@@ -134,3 +137,24 @@ def test_existing_query_on_redirect_is_kept(world):
     r = world.decide(note(world, redirect))
     q = parse_qs(urlsplit(r.headers["location"]).query)
     assert q["session"] == ["abc"] and "code" in q
+
+
+def test_non_ascii_csrf_is_refused_not_a_crash(world):
+    assert world.decide(note(world), csrf="\u00e9" * 64).status_code == 400
+
+
+def test_allow_is_not_autofocused_and_only_clickable_after_a_moment(world):
+    """Against keyjacking and double-click hijacking: a stray Enter or click can't hit Allow."""
+    page = world.allow_page(note(world)).text
+    assert " autofocus" not in page and "@keyframes arm{from{pointer-events:none}}" in page
+
+
+def test_agent_name_loses_control_and_bidi_characters(world):
+    page = world.allow_page(note(world, name="Claude\u202e Code\x1b[2J\n")).text
+    assert "\u202e" not in page and "\x1b" not in page and "Allow Claude Code [2J to use" in page
+
+
+def test_handlers_run_in_the_thread_pool():
+    """They make blocking calls (Redis, the login check), which must not stall the event loop."""
+    assert not inspect.iscoroutinefunction(allow_page.authorize_page)
+    assert not inspect.iscoroutinefunction(allow_page.authorize_decision)

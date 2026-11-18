@@ -41,6 +41,7 @@ import html
 import ipaddress
 import logging
 import os
+import re
 import secrets
 import time
 from typing import Any, Dict, Optional
@@ -63,6 +64,7 @@ CODE_AUDIENCE = "mcp-connect:code"
 CODE_TTL_SECONDS = 60
 MAX_REQUEST_AGE_SECONDS = 600   # a signed note older than this is refused even if its exp is later
 MIN_KEY_BYTES = 32
+PKCE_CHALLENGE = re.compile(r"[A-Za-z0-9_-]{43}")   # base64url(SHA-256(verifier)), no padding
 PREFIX = os.environ.get("MCP_REDIS_PREFIX", "keyfall:")
 APP_NAME = os.environ.get("MCP_APP_NAME", "My App")
 
@@ -195,7 +197,7 @@ def verify_request_token(token: str, key: bytes) -> Dict[str, Any]:
     for field in ("client_id", "redirect_uri", "code_challenge"):
         if not isinstance(claims.get(field), str) or not claims[field]:
             raise ValueError("This sign-in link is missing information.")
-    if claims.get("code_challenge_method") != "S256":
+    if claims.get("code_challenge_method") != "S256" or not PKCE_CHALLENGE.fullmatch(claims["code_challenge"]):
         raise ValueError("This agent did not use a supported sign-in method.")
     if not redirect_uri_allowed(claims["redirect_uri"]):
         raise ValueError("This agent asked to return to an address that is not allowed.")
@@ -292,6 +294,10 @@ li{display:flex;gap:10px;align-items:flex-start;padding:3px 0}
 li svg{flex:0 0 16px;width:16px;height:16px;margin-top:3px}
 .can svg{color:var(--ok)}.cannot svg{color:var(--no)}
 .actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+/* Clicks only count once the page has been on screen for a moment, so a click or double-click
+   aimed at another page that opens this one can't land on Allow. No button has focus on load
+   either, so a stray Enter does nothing. */
+.actions button{animation:arm .7s step-end both}@keyframes arm{from{pointer-events:none}}
 button,.button{font:inherit;font-size:15px;font-weight:650;border-radius:11px;padding:11px 16px;cursor:pointer;
  border:1px solid var(--line);background:transparent;color:var(--ink);text-align:center;text-decoration:none;display:block}
 .primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
@@ -352,6 +358,12 @@ def _error(message: str, status: int) -> HTMLResponse:
         "<p>Go back to your agent and start the connection again.</p>"), status)
 
 
+def display_name(name: Optional[str], limit: int = 80) -> str:
+    """An agent's self-chosen name, safe to show: no control or bidi characters, one line, short."""
+    text = "".join(c if c.isprintable() else " " for c in (name or ""))
+    return " ".join(text.split())[:limit]
+
+
 def _initial(text: str) -> str:
     return html.escape((text.strip()[:1] or "?").upper())
 
@@ -378,7 +390,7 @@ def _identity_badge(rc: Dict[str, Any]) -> str:
 
 def _consent(user: Dict[str, Any], rc: Dict[str, Any], req: str, key: bytes, action: str) -> HTMLResponse:
     e = html.escape
-    agent = (rc.get("client_name") or "").strip() or "An unnamed agent"
+    agent = display_name(rc.get("client_name")) or "An unnamed agent"
     uri = rc["redirect_uri"]
     host = (urlsplit(uri).hostname or "").lower()
     dest = "an app on this computer" if (_is_loopback(host) or uri in app_redirects()) else host
@@ -405,7 +417,7 @@ def _consent(user: Dict[str, Any], rc: Dict[str, Any], req: str, key: bytes, act
         f"<input type=\"hidden\" name=\"csrf\" value=\"{csrf_token(user['email'], req, key)}\">"
         "<div class=\"actions\">"
         "<button type=\"submit\" name=\"decision\" value=\"deny\">Cancel</button>"
-        "<button class=\"primary\" type=\"submit\" name=\"decision\" value=\"allow\" autofocus>Allow</button>"
+        "<button class=\"primary\" type=\"submit\" name=\"decision\" value=\"allow\">Allow</button>"
         "</div></form>"
         "<p class=\"note\">Only allow an agent you started yourself, just now.</p>"
     )
@@ -453,8 +465,10 @@ def _gate(request: Request, req: str):
     return key, user, rc
 
 
+# Plain "def": FastAPI runs these in its thread pool. They make blocking calls (Redis, the login
+# check's key download), which inside "async def" would stall every other request meanwhile.
 @router.get("/authorize")
-async def authorize_page(request: Request, req: str = ""):
+def authorize_page(request: Request, req: str = ""):
     gate = _gate(request, req)
     if isinstance(gate, HTMLResponse):
         return gate
@@ -464,13 +478,13 @@ async def authorize_page(request: Request, req: str = ""):
 
 
 @router.post("/authorize")
-async def authorize_decision(request: Request, req: str = Form(""), csrf: str = Form(""),
-                             decision: str = Form("")):
+def authorize_decision(request: Request, req: str = Form(""), csrf: str = Form(""),
+                       decision: str = Form("")):
     gate = _gate(request, req)
     if isinstance(gate, HTMLResponse):
         return gate
     key, user, rc = gate
-    if not hmac.compare_digest(csrf, csrf_token(user["email"], req, key)):
+    if not hmac.compare_digest(csrf.encode(), csrf_token(user["email"], req, key).encode()):
         return _error("This approval form is not valid. Start the connection again.", 400)
     r = redis_conn()
     blocked = _revoked_response(r, user, rc)
@@ -478,7 +492,7 @@ async def authorize_decision(request: Request, req: str = Form(""), csrf: str = 
         return blocked
 
     state = rc.get("state")
-    agent = rc.get("client_name") or rc["client_id"]
+    agent = display_name(rc.get("client_name")) or display_name(rc["client_id"])
     event = dict(role=user["role"], client_id=rc["client_id"], client_name=rc.get("client_name"))
     if decision != "allow":
         record_event(r, "connect_declined", user["email"], **event)

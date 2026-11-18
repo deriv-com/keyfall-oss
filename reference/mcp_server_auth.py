@@ -45,6 +45,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import secrets
 import socket
 import time
@@ -92,6 +93,7 @@ CODE_AUDIENCE = "mcp-connect:code"
 REQUEST_TTL_SECONDS = 600            # the signed note: time to sign in and click Allow
 ROLES = frozenset({"admin", "user", "readonly"})
 MIN_KEY_BYTES = 32
+PKCE_CHALLENGE = re.compile(r"[A-Za-z0-9_-]{43}")   # base64url(SHA-256(verifier)), no padding
 
 ACCESS_TTL_SECONDS = 3600            # 1 hour
 GRANT_TTL_SECONDS = 14 * 24 * 3600   # a chain of refresh tokens never outlives the Allow by more than this
@@ -128,6 +130,12 @@ def _norm(email: str) -> str:
 
 def _env_set(name: str) -> frozenset:
     return frozenset(v.strip().lower() for v in os.environ.get(name, "").split(",") if v.strip())
+
+
+def display_name(name: Optional[str], limit: int = 80) -> str:
+    """An agent's self-chosen name, safe to show: no control or bidi characters, one line, short."""
+    text = "".join(c if c.isprintable() else " " for c in (name or ""))
+    return " ".join(text.split())[:limit]
 
 
 def _grace_fernet(refresh_token: str) -> Fernet:
@@ -312,7 +320,7 @@ def client_from_document(url: str, doc: Any) -> CimdClient:
     name = doc.get("client_name")
     return CimdClient(
         client_id=url,
-        client_name=name[:80] if isinstance(name, str) else None,
+        client_name=display_name(name) if isinstance(name, str) else None,
         client_uri=doc.get("client_uri") if isinstance(doc.get("client_uri"), str) else None,
         redirect_uris=uris,
         token_endpoint_auth_method="none",
@@ -414,6 +422,8 @@ class AllowPageOAuthProvider:
             raise AuthorizeError("invalid_request", "redirect_uri is not allowed")
         if params.resource and params.resource.rstrip("/") != self.resource_url.rstrip("/"):
             raise AuthorizeError("invalid_target", "Unknown resource")
+        if not PKCE_CHALLENGE.fullmatch(params.code_challenge or ""):
+            raise AuthorizeError("invalid_request", "code_challenge must be an S256 challenge (43 base64url characters)")
         now = int(time.time())
         req = jwt.encode(
             {
@@ -422,7 +432,7 @@ class AllowPageOAuthProvider:
                 "iat": now,
                 "exp": now + REQUEST_TTL_SECONDS,
                 "client_id": client.client_id,
-                "client_name": (client.client_name or "")[:80],
+                "client_name": display_name(client.client_name),
                 # The Allow page shows the vendor's domain for metadata-document clients;
                 # a DCR client's name is only what the agent said about itself.
                 "client_verified": is_cimd_client_id(client.client_id),
@@ -491,7 +501,7 @@ class AllowPageOAuthProvider:
         pipe.hset(key, mapping={
             "subject": authorization_code.subject, "role": authorization_code.role,
             "name": authorization_code.name, "client_id": client.client_id,
-            "client_name": (client.client_name or "")[:80], "connected_at": str(now),
+            "client_name": display_name(client.client_name), "connected_at": str(now),
             "grant_expires_at": str(grant_expires_at),
         })
         pipe.expireat(key, grant_expires_at)
@@ -505,7 +515,8 @@ class AllowPageOAuthProvider:
             await self.end_grant(grant_id, reason="revoked")
             raise TokenError("invalid_grant", "Agent access is turned off for this account")
         await record_event(self.redis, "connected", authorization_code.subject, role=authorization_code.role,
-                           client_id=client.client_id, client_name=client.client_name, grant=grant_id)
+                           client_id=client.client_id, client_name=display_name(client.client_name),
+                           grant=grant_id)
         return tokens
 
     # tokens ----------------------------------------------------------------------------
