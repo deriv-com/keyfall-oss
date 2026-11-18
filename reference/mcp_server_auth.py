@@ -12,7 +12,7 @@ Flow
 3. /authorize (the SDK) -> authorize(): sign a "request token" (the signed note) and send the
    browser to the Allow page.
 4. The Allow page signs a 60-second "code" (email, role, PKCE challenge) and returns it to the
-   agent's redirect_uri.
+   agent's redirect_uri, with this server's issuer as iss (RFC 9207).
 5. /token (the SDK checks PKCE and redirect_uri) -> load_authorization_code() checks the
    code's signature and that it is used once -> exchange_authorization_code() issues tokens.
 6. /mcp: every call needs a bearer token; load_access_token() checks it and the revoke flag.
@@ -78,10 +78,10 @@ from mcp.server.transport_security import (
     TransportSecuritySettings,
 )
 from mcp.shared.auth import InvalidRedirectUriError, OAuthClientInformationFull, OAuthToken
-from pydantic import AnyUrl
+from pydantic import AnyHttpUrl, AnyUrl
 from redis.exceptions import WatchError
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.routing import Route, request_response
 
 logger = logging.getLogger(__name__)
@@ -423,12 +423,13 @@ class AllowPageOAuthProvider:
         audit                  stream of events
     """
 
-    def __init__(self, redis, *, resource_url: str, allow_page_url: str,
+    def __init__(self, redis, *, resource_url: str, allow_page_url: str, issuer: str = "",
                  fetch_document: Callable[[str], Any] = fetch_client_document):
         self.redis = redis
         self.resource_url = resource_url
         self.allow_page_url = allow_page_url
         self.fetch_document = fetch_document
+        self.issuer = issuer          # exactly as in the metadata; the Allow page returns it as iss
 
     # clients ---------------------------------------------------------------------------
 
@@ -504,6 +505,7 @@ class AllowPageOAuthProvider:
                 "state": params.state,
                 "scopes": [SCOPE],
                 "resource": self.resource_url,
+                "issuer": self.issuer,
             },
             signing_key(),
             algorithm="HS256",
@@ -784,14 +786,18 @@ def redis_client() -> aioredis.Redis:
                              socket_timeout=5, socket_connect_timeout=5)
 
 
-def _no_open_redirect(handler: Callable[[Request], Any], allow_page_url: str) -> Callable[[Request], Any]:
-    """/authorize, but an error is shown here instead of being sent on to a website.
+def _authorize_endpoint(handler: Callable[[Request], Any], allow_page_url: str,
+                        issuer: str) -> Callable[[Request], Any]:
+    """The SDK's /authorize, with two changes to its error answers.
 
-    The SDK sends /authorize errors (a bad scope, a missing parameter, a refused resource) to the
-    client's redirect_uri. Anyone can register a client with an https redirect_uri, so that turns
-    this public host into an open redirector: a link to it lands on any site, with no click and
-    no sign-in (RFC 9700 section 4.11.2). Errors still go back to an agent listening on this
-    computer or an app callback; only website callbacks get the error as a 400 here.
+    1. Never sent on to a website. The SDK sends /authorize errors (a bad scope, a missing
+       parameter, a refused resource) to the client's redirect_uri. Anyone can register a client
+       with an https redirect_uri, so that turns this public host into an open redirector: a link
+       to it lands on any site, with no click and no sign-in (RFC 9700 section 4.11.2). Website
+       callbacks get the error as a 400 here; an agent on this computer or an app callback still
+       gets it by redirect.
+    2. Those redirects carry iss (RFC 9207), like the Allow page's answers, so an agent talking to
+       several servers can tell which one answered (mix-up attacks).
     """
     async def authorize(request: Request) -> Response:
         resp = await handler(request)
@@ -800,7 +806,9 @@ def _no_open_redirect(handler: Callable[[Request], Any], allow_page_url: str) ->
             return resp
         p = urlsplit(location)
         if p.scheme not in ("http", "https") or (p.scheme == "http" and _is_loopback((p.hostname or "").lower())):
-            return resp
+            query = urlencode(parse_qsl(p.query, keep_blank_values=True) + [("iss", issuer)])
+            return RedirectResponse(urlunsplit((p.scheme, p.netloc, p.path, query, "")), status_code=302,
+                                    headers={"Cache-Control": "no-store"})
         q = dict(parse_qsl(p.query))
         body = {k: q[k] for k in ("error", "error_description", "state") if k in q}
         return JSONResponse(body or {"error": "invalid_request"}, status_code=400,
@@ -815,10 +823,15 @@ def build_mcp(register_tools: Callable[[MCPServer, Any], None], redis=None, *, n
     register_tools(mcp, redis) adds your tools; use caller() and audited(redis) inside them.
     """
     redis = redis if redis is not None else redis_client()
-    provider = AllowPageOAuthProvider(redis, resource_url=RESOURCE_URL, allow_page_url=ALLOW_PAGE_URL,
-                                      fetch_document=fetch_document)
     registration = ClientRegistrationOptions(enabled=True, valid_scopes=[SCOPE], default_scopes=[SCOPE])
     revocation = RevocationOptions(enabled=True)
+    # Served ahead of the SDK's own metadata route (below), which advertises neither of these yet.
+    metadata = build_metadata(AnyHttpUrl(ISSUER_URL), None, registration, revocation)
+    metadata.authorization_response_iss_parameter_supported = True     # RFC 9207, see _authorize_endpoint
+    metadata.client_id_metadata_document_supported = CIMD_ENABLED or None
+    body = metadata.model_dump(mode="json", exclude_none=True)
+    provider = AllowPageOAuthProvider(redis, resource_url=RESOURCE_URL, allow_page_url=ALLOW_PAGE_URL,
+                                      issuer=body["issuer"], fetch_document=fetch_document)
     mcp = MCPServer(
         name=name,
         title=title,
@@ -839,24 +852,17 @@ def build_mcp(register_tools: Callable[[MCPServer, Any], None], redis=None, *, n
         # A public server behind a proxy; DNS-rebinding protection is for localhost-only servers.
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
-    # Ahead of the SDK's own /authorize route: same handler, but its errors never send the
-    # browser on to a website (see _no_open_redirect).
-    authorize = request_response(_no_open_redirect(AuthorizationHandler(provider).handle, ALLOW_PAGE_URL))
+    # Ahead of the SDK's own /authorize route: same handler, safer error answers (see _authorize_endpoint).
+    authorize = request_response(_authorize_endpoint(AuthorizationHandler(provider).handle, ALLOW_PAGE_URL,
+                                                     body["issuer"]))
     limited = RequestBodyLimitMiddleware(authorize, DEFAULT_MAX_REQUEST_BODY_SIZE)
     app.router.routes.insert(0, Route("/authorize", limited, methods=["GET", "POST"]))
-    if CIMD_ENABLED:
-        # The SDK's metadata does not advertise CIMD yet. Serve the same document with the flag
-        # set, ahead of the SDK's own route, so agents that support it skip /register.
-        metadata = build_metadata(mcp.settings.auth.issuer_url, None, registration, revocation)
-        metadata.client_id_metadata_document_supported = True
-        body = metadata.model_dump(mode="json", exclude_none=True)
 
-        async def as_metadata(_: Request) -> JSONResponse:
-            return JSONResponse(body, headers={"Cache-Control": "public, max-age=3600",
-                                               "Access-Control-Allow-Origin": "*"})
+    async def as_metadata(_: Request) -> JSONResponse:
+        return JSONResponse(body, headers={"Cache-Control": "public, max-age=3600",
+                                           "Access-Control-Allow-Origin": "*"})
 
-        app.router.routes.insert(0, Route("/.well-known/oauth-authorization-server", as_metadata,
-                                          methods=["GET"]))
+    app.router.routes.insert(0, Route("/.well-known/oauth-authorization-server", as_metadata, methods=["GET"]))
     return mcp, app
 
 

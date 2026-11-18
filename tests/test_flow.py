@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from urllib.parse import parse_qs, urlsplit
 
 import jwt
 
@@ -45,6 +46,7 @@ def test_metadata_points_agents_at_this_server_and_offers_cimd(world):
     assert asm["registration_endpoint"] == "https://mcp.example.com/register"
     assert asm["code_challenge_methods_supported"] == ["S256"]
     assert asm["client_id_metadata_document_supported"] is True
+    assert asm["authorization_response_iss_parameter_supported"] is True
 
 
 def test_mcp_without_token_is_401_with_sign_in_hint(world):
@@ -157,3 +159,20 @@ def test_used_code_is_remembered_until_after_it_expires(world):
     ahead = jwt.encode({**claims, "exp": claims["exp"] + 3600}, "k" * 64, algorithm="HS256")
     assert world.token(client_id, verifier, ahead).status_code == 200
     assert world.r.ttl(f"t:code-used:{claims['jti']}") > 3600
+
+
+def test_every_authorization_response_names_its_issuer(world):
+    """RFC 9207 (a SHOULD in the MCP spec): iss on the code, on Cancel and on /authorize errors,
+    equal to the metadata's issuer, so an agent using several servers can't be mixed up."""
+    issuer = world.mcp.get("/.well-known/oauth-authorization-server").json()["issuer"]
+
+    def iss(location):
+        return parse_qs(urlsplit(location).query).get("iss")
+
+    cid = world.register().json()["client_id"]
+    for decision in ("allow", "deny"):
+        r = world.decide(world.authorize(cid, pkce()[1]), decision=decision)
+        assert iss(r.headers["location"]) == [issuer], decision
+    r = world.mcp.get("/authorize", params={"response_type": "code", "client_id": cid, "redirect_uri": REDIRECT,
+                                            "code_challenge": pkce()[1], "scope": "bogus"})
+    assert r.status_code == 302 and iss(r.headers["location"]) == [issuer]

@@ -16,7 +16,8 @@ mcp_server_auth.py):
 Signed note (request token), MCP server -> here as ?req=
     iss "mcp-server", aud "mcp-connect:request", exp <= 10 min,
     client_id, client_name, client_verified, redirect_uri, redirect_uri_provided_explicitly,
-    code_challenge, code_challenge_method "S256", state, scopes, resource
+    code_challenge, code_challenge_method "S256", state, scopes, resource,
+    issuer (the MCP server's metadata issuer, returned to the agent as iss, RFC 9207)
 
 Code (authorization code), here -> the agent's redirect_uri as ?code=
     iss "allow-page", aud "mcp-connect:code", exp 60 s, jti (single use),
@@ -505,12 +506,14 @@ def authorize_decision(request: Request, req: str = Form(""), csrf: str = Form("
     state = rc.get("state")
     agent = display_name(rc.get("client_name")) or display_name(rc["client_id"])
     event = dict(role=user["role"], client_id=rc["client_id"], client_name=rc.get("client_name"))
+    # iss: which server answered, so an agent using several servers can't be mixed up (RFC 9207)
+    iss = rc.get("issuer") if isinstance(rc.get("issuer"), str) and rc.get("issuer") else None
     if decision != "allow":
         record_event(r, "connect_declined", user["email"], **event)
-        target = with_query(rc["redirect_uri"], error="access_denied", state=state)
+        target = with_query(rc["redirect_uri"], error="access_denied", state=state, iss=iss)
     else:
         record_event(r, "connect_allowed", user["email"], **event)
-        target = with_query(rc["redirect_uri"], code=issue_code(user, rc, key), state=state)
+        target = with_query(rc["redirect_uri"], code=issue_code(user, rc, key), state=state, iss=iss)
     if _is_web_callback(rc["redirect_uri"]):
         return _continue(agent, target)
     return RedirectResponse(target, status_code=303, headers={"Cache-Control": "no-store"})
