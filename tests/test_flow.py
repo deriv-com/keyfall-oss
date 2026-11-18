@@ -113,3 +113,20 @@ def test_redis_holds_only_token_hashes(world):
         json.dumps(world.r.hgetall(k)) if world.r.type(k) == "hash" else str(world.r.get(k) or "")
         for k in world.r.keys("*") if world.r.type(k) in ("hash", "string"))
     assert tok["access_token"] not in dump and tok["refresh_token"] not in dump
+
+
+def test_authorize_errors_never_bounce_to_a_website(world):
+    """Anyone can register an https callback, so /authorize errors must not redirect there
+    (an open redirect on the public host, RFC 9700 4.11.2). Agents on this computer still get theirs."""
+    evil = "https://phish.example.net/login"
+    cid = world.register(evil).json()["client_id"]
+    good = {"response_type": "code", "client_id": cid, "redirect_uri": evil, "code_challenge": pkce()[1], "state": "s"}
+    for params in ({"client_id": cid, "redirect_uri": evil},                       # response_type missing
+                   {**good, "scope": "bogus"},
+                   {**good, "resource": "https://elsewhere.example/mcp"}):
+        r = world.mcp.get("/authorize", params=params)
+        assert r.status_code == 400 and "location" not in r.headers, params
+        assert r.json()["error"]
+    local = world.register().json()["client_id"]
+    r = world.mcp.get("/authorize", params={**good, "client_id": local, "redirect_uri": REDIRECT, "scope": "bogus"})
+    assert r.status_code == 302 and r.headers["location"].startswith(REDIRECT + "?error=invalid_scope")

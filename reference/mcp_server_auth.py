@@ -49,12 +49,13 @@ import secrets
 import socket
 import time
 from typing import Any, Callable, Optional
-from urllib.parse import urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 import jwt  # PyJWT
 import redis.asyncio as aioredis
 from cryptography.fernet import Fernet, InvalidToken
+from mcp.server.auth.handlers.authorize import AuthorizationHandler
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import (
     AccessToken,
@@ -69,13 +70,17 @@ from mcp.server.auth.routes import build_metadata
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.server.transport_security import TransportSecuritySettings
+from mcp.server.transport_security import (
+    DEFAULT_MAX_REQUEST_BODY_SIZE,
+    RequestBodyLimitMiddleware,
+    TransportSecuritySettings,
+)
 from mcp.shared.auth import InvalidRedirectUriError, OAuthClientInformationFull, OAuthToken
 from pydantic import AnyUrl
 from redis.exceptions import WatchError
 from starlette.requests import Request
-from starlette.responses import JSONResponse
-from starlette.routing import Route
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Route, request_response
 
 logger = logging.getLogger(__name__)
 
@@ -706,6 +711,29 @@ def redis_client() -> aioredis.Redis:
                              socket_timeout=5, socket_connect_timeout=5)
 
 
+def _no_open_redirect(handler: Callable[[Request], Any], allow_page_url: str) -> Callable[[Request], Any]:
+    """/authorize, but an error is shown here instead of being sent on to a website.
+
+    The SDK sends /authorize errors (a bad scope, a missing parameter, a refused resource) to the
+    client's redirect_uri. Anyone can register a client with an https redirect_uri, so that turns
+    this public host into an open redirector: a link to it lands on any site, with no click and
+    no sign-in (RFC 9700 section 4.11.2). Errors still go back to an agent listening on this
+    computer or an app callback; only website callbacks get the error as a 400 here.
+    """
+    async def authorize(request: Request) -> Response:
+        resp = await handler(request)
+        location = resp.headers.get("location", "")
+        if not (300 <= resp.status_code < 400) or not location or location.startswith(f"{allow_page_url}?"):
+            return resp
+        p = urlsplit(location)
+        if p.scheme not in ("http", "https") or (p.scheme == "http" and _is_loopback((p.hostname or "").lower())):
+            return resp
+        q = dict(parse_qsl(p.query))
+        body = {k: q[k] for k in ("error", "error_description", "state") if k in q}
+        return JSONResponse(body or {"error": "invalid_request"}, status_code=400, headers={"Cache-Control": "no-store"})
+    return authorize
+
+
 def build_mcp(register_tools: Callable[[MCPServer, Any], None], redis=None, *, name: str = "my-app",
               title: str = "My App", instructions: str = "", fetch_document=fetch_client_document):
     """Build the MCP server and its Starlette app (serve it with ONE worker per replica).
@@ -737,6 +765,11 @@ def build_mcp(register_tools: Callable[[MCPServer, Any], None], redis=None, *, n
         # A public server behind a proxy; DNS-rebinding protection is for localhost-only servers.
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
+    # Ahead of the SDK's own /authorize route: same handler, but its errors never send the
+    # browser on to a website (see _no_open_redirect).
+    authorize = request_response(_no_open_redirect(AuthorizationHandler(provider).handle, ALLOW_PAGE_URL))
+    app.router.routes.insert(0, Route("/authorize", RequestBodyLimitMiddleware(authorize, DEFAULT_MAX_REQUEST_BODY_SIZE),
+                                      methods=["GET", "POST"]))
     if CIMD_ENABLED:
         # The SDK's metadata does not advertise CIMD yet. Serve the same document with the flag
         # set, ahead of the SDK's own route, so agents that support it skip /register.
