@@ -232,12 +232,21 @@ def is_cimd_client_id(client_id: str) -> bool:
 
 
 def _cimd_url_ok(url: str) -> bool:
-    """https, a real path, no credentials, query or fragment, not an IP literal."""
+    """https on the default port, a real path, no credentials, query or fragment, not an IP literal.
+
+    Printable ASCII only: urlsplit silently drops tabs and newlines, so without this a client_id
+    could carry control characters (log forging, terminal escapes) or look-alike letters.
+    """
+    if not url.isascii() or any(c <= " " or c in "\x7f\\" for c in url):
+        return False
     try:
         p = urlsplit(url)
+        port = p.port
     except ValueError:
         return False
     if p.scheme != "https" or not p.hostname or p.username or p.password or p.query or p.fragment:
+        return False
+    if port not in (None, 443):    # the server's own address must not become a port scanner
         return False
     if p.hostname.endswith("."):   # one spelling per host, so trusted-host and cache keys can't be dodged
         return False
@@ -252,6 +261,24 @@ def _cimd_url_ok(url: str) -> bool:
     return not trusted or p.hostname.lower() in trusted
 
 
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")              # RFC 6052: IPv6 for an IPv4 address
+_IPV4_COMPATIBLE = ipaddress.ip_network("::/96")            # deprecated ::a.b.c.d form
+
+
+def _public_address(ip: str) -> bool:
+    """A global unicast address, also when it is an IPv4 address wrapped in IPv6 (NAT64 etc.)."""
+    addr = ipaddress.ip_address(ip)
+    if not addr.is_global or addr.is_multicast:
+        return False
+    if addr.version == 6:
+        inner = addr.ipv4_mapped or addr.sixtofour or (addr.teredo or (None, None))[1]
+        if inner is None and (addr in _NAT64 or addr in _IPV4_COMPATIBLE):
+            inner = ipaddress.IPv4Address(int(addr) & 0xFFFFFFFF)
+        if inner is not None and (not inner.is_global or inner.is_multicast):
+            return False
+    return True
+
+
 async def _pinned_address(host: str, port: int) -> Optional[str]:
     """Resolve once; return an address to connect to, or None if any answer is not public.
 
@@ -264,10 +291,8 @@ async def _pinned_address(host: str, port: int) -> Optional[str]:
     except OSError:
         return None
     ips = sorted({info[4][0] for info in infos})
-    for ip in ips:
-        addr = ipaddress.ip_address(ip)
-        if not addr.is_global or addr.is_multicast:
-            return None
+    if not all(_public_address(ip) for ip in ips):
+        return None
     return ips[0] if ips else None
 
 
@@ -275,29 +300,39 @@ async def fetch_client_document(url: str) -> tuple[dict, int]:
     """Download a metadata document. Returns (document, cache seconds). Raises ValueError.
 
     Connects to the address that was checked, with the real hostname as Host and as the TLS
-    server name, so the certificate is still verified for the vendor's domain.
+    server name, so the certificate is still verified for the vendor's domain. The whole download
+    (DNS, connect, every byte) has one deadline: httpx's timeout is per read, so a server sending
+    a byte every few seconds would otherwise hold the request for hours. The body is read as
+    sent and must not be compressed, so the size cap counts the bytes that reach memory.
     """
     p = urlsplit(url)
     port = p.port or 443
-    ip = await _pinned_address(p.hostname, port)
-    if ip is None:
-        raise ValueError("client_id host is not public")
-    pinned = urlunsplit(("https", f"[{ip}]:{port}" if ":" in ip else f"{ip}:{port}", p.path, "", ""))
-    headers = {"Accept": "application/json", "Host": p.netloc}
-    async with httpx.AsyncClient(timeout=CIMD_TIMEOUT_SECONDS, follow_redirects=False) as http:
-        async with http.stream("GET", pinned, headers=headers, extensions={"sni_hostname": p.hostname}) as resp:
-            if resp.status_code != 200:
-                raise ValueError(f"client_id document answered {resp.status_code}")
-            body = b""
-            async for chunk in resp.aiter_bytes():
-                body += chunk
-                if len(body) > CIMD_MAX_BYTES:
-                    raise ValueError("client_id document is too large")
-            cache = CIMD_DEFAULT_CACHE_SECONDS
-            for part in resp.headers.get("cache-control", "").split(","):
-                name, _, value = part.strip().partition("=")
-                if name.lower() == "max-age" and value.isdigit():
-                    cache = int(value)
+    try:
+        async with asyncio.timeout(CIMD_TIMEOUT_SECONDS):
+            ip = await _pinned_address(p.hostname, port)
+            if ip is None:
+                raise ValueError("client_id host is not public")
+            pinned = urlunsplit(("https", f"[{ip}]:{port}" if ":" in ip else f"{ip}:{port}", p.path, "", ""))
+            headers = {"Accept": "application/json", "Accept-Encoding": "identity", "Host": p.netloc}
+            async with httpx.AsyncClient(timeout=CIMD_TIMEOUT_SECONDS, follow_redirects=False) as http:
+                async with http.stream("GET", pinned, headers=headers,
+                                       extensions={"sni_hostname": p.hostname}) as resp:
+                    if resp.status_code != 200:
+                        raise ValueError(f"client_id document answered {resp.status_code}")
+                    if resp.headers.get("content-encoding", "identity").strip().lower() not in ("", "identity"):
+                        raise ValueError("client_id document is compressed")
+                    body = b""
+                    async for chunk in resp.aiter_raw():
+                        body += chunk
+                        if len(body) > CIMD_MAX_BYTES:
+                            raise ValueError("client_id document is too large")
+                    cache = CIMD_DEFAULT_CACHE_SECONDS
+                    for part in resp.headers.get("cache-control", "").split(","):
+                        name, _, value = part.strip().partition("=")
+                        if name.lower() == "max-age" and value.isdigit():
+                            cache = int(value)
+    except TimeoutError:
+        raise ValueError("client_id document took too long") from None
     try:
         doc = json.loads(body)
     except ValueError:
@@ -318,7 +353,7 @@ def client_from_document(url: str, doc: Any) -> CimdClient:
     if method != "none":  # a public document cannot carry a secret; private_key_jwt is not supported here
         raise ValueError(f"token_endpoint_auth_method {method!r} is not supported")
     name = doc.get("client_name")
-    return CimdClient(
+    client = CimdClient(
         client_id=url,
         client_name=display_name(name) if isinstance(name, str) else None,
         client_uri=doc.get("client_uri") if isinstance(doc.get("client_uri"), str) else None,
@@ -327,6 +362,11 @@ def client_from_document(url: str, doc: Any) -> CimdClient:
         grant_types=["authorization_code", "refresh_token"],
         response_types=["code"],
     )
+    # Check again as stored: parsing normalizes URLs (a backslash becomes a slash, so what Python
+    # read as a loopback address can be another host to a browser).
+    if not all(redirect_uri_allowed(str(u)) for u in client.redirect_uris or []):
+        raise ValueError("document lists a redirect_uri that is not allowed")
+    return client
 
 
 # --- provider ----------------------------------------------------------------------------
@@ -394,8 +434,8 @@ class AllowPageOAuthProvider:
                 return client_from_document(url, json.loads(cached))
             doc, cache_seconds = await self.fetch_document(url)
             client = client_from_document(url, doc)
-        except (ValueError, httpx.HTTPError) as exc:
-            logger.warning("client_id document refused %s: %s", url, exc)
+        except (ValueError, httpx.HTTPError, httpx.InvalidURL) as exc:
+            logger.warning("client_id document refused %r: %s", url, exc)
             return None
         await self.redis.set(key, json.dumps(doc), ex=cache_seconds)
         return client

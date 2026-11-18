@@ -69,6 +69,11 @@ def test_other_loopback_paths_and_hosts_still_must_match(cimd_world):
     "https://127.0.0.1/client.json", "https://agent.example.com/", "https://agent.example.com/c.json?x=1",
     "https://user:pw@agent.example.com/c.json", "https://agent.example.com/../c.json",
     "https://agent.example.com./c.json",
+    "https://agent.example.com/c.json\nforged log line",       # urlsplit drops the newline; we don't
+    "https://agent.example.com/c\x1b[2J.json",                 # terminal escape
+    "https://\u0430gent.example.com/c.json",                   # Cyrillic look-alike
+    "https://agent.example.com:6379/c.json",                   # any port but 443
+    "https://agent.example.com\\@evil.example.com/c.json",
 ])
 def test_unsafe_client_id_urls_are_refused_before_any_fetch(url):
     assert msa._cimd_url_ok(url) is False
@@ -88,3 +93,13 @@ def test_documents_are_cached(cimd_world):
     cimd_world.connect(redirect="http://127.0.0.1:5000/callback", client_id=AGENT)
     del cimd_world.docs[AGENT]                      # vendor offline: the cached copy still works
     cimd_world.connect(redirect="http://127.0.0.1:5000/callback", client_id=AGENT)
+
+
+def test_default_port_spelled_out_is_fine():
+    assert msa._cimd_url_ok("https://agent.example.com:443/oauth/client.json")
+
+
+def test_redirect_uris_are_checked_as_stored_too():
+    """Python reads http://evil.example.com\\@127.0.0.1/cb as loopback; a browser (and pydantic) as evil."""
+    with pytest.raises(ValueError, match="not allowed"):
+        msa.client_from_document(AGENT, doc(redirect_uris=["http://evil.example.com\\@127.0.0.1/cb"]))
