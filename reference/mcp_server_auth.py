@@ -72,6 +72,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.shared.auth import InvalidRedirectUriError, OAuthClientInformationFull, OAuthToken
 from pydantic import AnyUrl
+from redis.exceptions import WatchError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -346,6 +347,7 @@ class AllowPageOAuthProvider:
         grant:<id>             hash: one Allow = one chain of tokens. subject, role, name,
                                client_id, client_name, connected_at, grant_expires_at,
                                access, refresh (current token hashes). Expires with the grant.
+                               Every token is checked against it: deleting it ends them all.
         access:<sha256>        access token record (1 hour)
         refresh:<sha256>       refresh token record (until the grant ends)
         refresh-grace:<sha256> a just-rotated refresh token, for concurrent refreshes (30 s)
@@ -480,17 +482,26 @@ class AllowPageOAuthProvider:
         grant_id = secrets.token_urlsafe(16)
         grant_expires_at = now + GRANT_TTL_SECONDS
         key = f"{PREFIX}grant:{grant_id}"
-        await self.redis.hset(key, mapping={
+        pipe = self.redis.pipeline(transaction=True)
+        pipe.hset(key, mapping={
             "subject": authorization_code.subject, "role": authorization_code.role,
             "name": authorization_code.name, "client_id": client.client_id,
             "client_name": (client.client_name or "")[:80], "connected_at": str(now),
             "grant_expires_at": str(grant_expires_at),
         })
-        await self.redis.expireat(key, grant_expires_at)
+        pipe.expireat(key, grant_expires_at)
+        await pipe.execute()
+        tokens = await self._issue(client.client_id, authorization_code.subject, authorization_code.role,
+                                   authorization_code.name, grant_id, grant_expires_at)
+        # An admin revoke that landed after load_authorization_code read the flag may have looked
+        # for grants before this one existed. Check again now that it does: either we see the
+        # flag here, or the revoke's search starts after this point and finds this grant.
+        if await is_revoked(self.redis, authorization_code.subject):
+            await self.end_grant(grant_id, reason="revoked")
+            raise TokenError("invalid_grant", "Agent access is turned off for this account")
         await record_event(self.redis, "connected", authorization_code.subject, role=authorization_code.role,
                            client_id=client.client_id, client_name=client.client_name, grant=grant_id)
-        return await self._issue(client.client_id, authorization_code.subject, authorization_code.role,
-                                 authorization_code.name, grant_id, grant_expires_at)
+        return tokens
 
     # tokens ----------------------------------------------------------------------------
 
@@ -503,15 +514,32 @@ class AllowPageOAuthProvider:
         if access_ttl <= 0:
             raise TokenError("invalid_grant", "Approval expired")
         base = {"client_id": client_id, "subject": subject, "role": role, "name": name, "grant": grant_id}
-        pipe = self.redis.pipeline(transaction=True)
-        pipe.set(f"{PREFIX}access:{_hash(access)}",
-                 json.dumps({**base, "expires_at": now + access_ttl, "refresh": _hash(refresh)}), ex=access_ttl)
-        pipe.set(f"{PREFIX}refresh:{_hash(refresh)}",
-                 json.dumps({**base, "grant_expires_at": grant_expires_at, "access": _hash(access)}), ex=refresh_ttl)
-        pipe.hset(f"{PREFIX}grant:{grant_id}", mapping={"access": _hash(access), "refresh": _hash(refresh)})
-        await pipe.execute()
+        gkey = f"{PREFIX}grant:{grant_id}"
+        # The grant is the source of truth. If it ended while this request was in flight (reuse
+        # detection, revoke), write nothing: WATCH turns "is it still there?" and the writes into
+        # one step, so a grant that was just deleted is never re-created by a late refresh.
+        async with self.redis.pipeline(transaction=True) as pipe:
+            try:
+                await pipe.watch(gkey)
+                if not await pipe.hexists(gkey, "subject"):
+                    raise TokenError("invalid_grant", "Approval ended")
+                pipe.multi()
+                pipe.set(f"{PREFIX}access:{_hash(access)}",
+                         json.dumps({**base, "expires_at": now + access_ttl, "refresh": _hash(refresh)}),
+                         ex=access_ttl)
+                pipe.set(f"{PREFIX}refresh:{_hash(refresh)}",
+                         json.dumps({**base, "grant_expires_at": grant_expires_at, "access": _hash(access)}),
+                         ex=refresh_ttl)
+                pipe.hset(gkey, mapping={"access": _hash(access), "refresh": _hash(refresh)})
+                await pipe.execute()
+            except WatchError:
+                raise TokenError("invalid_grant", "Approval ended") from None
         return OAuthToken(access_token=access, token_type="Bearer", expires_in=access_ttl,
                           scope=SCOPE, refresh_token=refresh)
+
+    async def _grant_live(self, grant_id: Optional[str]) -> bool:
+        """Every token is checked against its grant, so ending the grant ends them all at once."""
+        return bool(grant_id) and bool(await self.redis.hexists(f"{PREFIX}grant:{grant_id}", "subject"))
 
     async def load_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: str
@@ -530,7 +558,7 @@ class AllowPageOAuthProvider:
         rec = json.loads(raw)
         if rec["client_id"] != client.client_id or await is_revoked(self.redis, rec["subject"]):
             return None
-        if not await self.redis.exists(f"{PREFIX}grant:{rec['grant']}"):
+        if not await self._grant_live(rec.get("grant")):
             return None
         return AppRefreshToken(
             token=refresh_token, client_id=rec["client_id"], scopes=[SCOPE],
@@ -570,7 +598,7 @@ class AllowPageOAuthProvider:
         rec = json.loads(raw)
         if rec.get("client_id") != client_id or await is_revoked(self.redis, rec["subject"]):
             return None
-        if not await self.redis.exists(f"{PREFIX}grant:{rec.get('grant')}"):
+        if not await self._grant_live(rec.get("grant")):
             return None
         try:
             issued = _grace_fernet(old_token).decrypt(rec["issued"].encode())
@@ -613,7 +641,7 @@ class AllowPageOAuthProvider:
         if not raw:
             return None
         rec = json.loads(raw)
-        if await is_revoked(self.redis, rec["subject"]):
+        if not await self._grant_live(rec.get("grant")) or await is_revoked(self.redis, rec["subject"]):
             return None
         return AppAccessToken(
             token=token, client_id=rec["client_id"], scopes=[SCOPE], expires_at=rec["expires_at"],

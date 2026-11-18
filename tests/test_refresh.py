@@ -64,3 +64,45 @@ def test_agent_revoke_disconnects_it(world):
     assert r.status_code == 200
     assert world.call(tok["access_token"]).status_code == 401
     assert not world.r.keys("t:grant:*")
+
+
+def test_grant_ended_mid_refresh_stays_ended(world, monkeypatch):
+    """Reuse detection or a revoke can end the grant while a refresh is in flight. That refresh
+    must not re-create the grant (it used to, with no expiry, so the chain lived on)."""
+    monkeypatch.setattr(msa, "REFRESH_GRACE_SECONDS", 0)
+    client_id, tok = world.connect()
+    real = msa.AllowPageOAuthProvider._issue
+
+    async def ended_first(self, *args):
+        await self.end_grant(args[4], reason="test")
+        return await real(self, *args)
+
+    monkeypatch.setattr(msa.AllowPageOAuthProvider, "_issue", ended_first)
+    r = world.refresh(client_id, tok["refresh_token"])
+    assert r.status_code == 400 and r.json()["error"] == "invalid_grant"
+    assert not world.r.keys("t:grant:*") and not world.r.keys("t:access:*") and not world.r.keys("t:refresh:*")
+
+
+def test_every_token_dies_with_its_grant(world):
+    """A token that end_grant missed (written by a request still in flight) is refused anyway."""
+    client_id, tok = world.connect()
+    world.r.delete(*world.r.keys("t:grant:*"))
+    assert world.call(tok["access_token"]).status_code == 401
+    assert world.refresh(client_id, tok["refresh_token"]).status_code == 400
+
+
+def test_revoke_landing_during_code_exchange_wins(world, monkeypatch):
+    """The revoke flag is set after the code was checked but before tokens exist: no grant survives."""
+    real = msa.AllowPageOAuthProvider._issue
+
+    async def revoked_meanwhile(self, *args):
+        out = await real(self, *args)
+        await self.redis.set("t:revoked:alice@example.com", "{}")
+        return out
+
+    monkeypatch.setattr(msa.AllowPageOAuthProvider, "_issue", revoked_meanwhile)
+    client_id, verifier, code = world.sign_in()
+    r = world.token(client_id, verifier, code)
+    assert r.status_code == 400 and r.json()["error"] == "invalid_grant"
+    world.r.delete("t:revoked:alice@example.com")       # restore: nothing from before comes back
+    assert not world.r.keys("t:grant:*") and not world.r.keys("t:access:*")
