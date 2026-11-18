@@ -85,8 +85,8 @@ Claude Code, on Alex's laptop), **the MCP server**, **the SSO** and **the Allow 
 1. The Allow page checks the CSRF token and the revoke flag again.
 2. It signs the **one-time code** (60 seconds, random id): Alex's email and role, plus the agent
    id, callback address and **hash** copied from the signed note.
-3. It redirects the browser to `http://localhost:<port>/callback?code=…&state=…`; the agent's
-   listener receives it and checks `state`.
+3. It redirects the browser to `http://localhost:<port>/callback?code=…&state=…&iss=…`; the
+   agent's listener receives it and checks `state` and `iss` (the MCP server's issuer).
 
 ### 7. Tokens (agent ↔ MCP server, direct HTTPS)
 1. `POST /token` with the **code and the secret itself**. This is the only time the secret leaves
@@ -156,6 +156,7 @@ no secret, and SHA-256 can't be reversed to find it.
 | Agent tricked into sending the code elsewhere | callback rules (https, http only to this computer, or a listed app callback), checked at registration, `/authorize` and on the Allow page, with one reading for every URL parser (no `\`, `user@`, `%` in the host or control characters); the code is bound to the callback |
 | A link to the Allow page for someone else's agent (consent phishing) | the page names where the code goes and whether the agent's name is verified; Allow can't be hit by a stray Enter or in the first 0.7 s; `MCP_WEB_REDIRECT_DOMAINS` limits which websites may receive codes (any https site by default) |
 | The public host used as an open redirector | `/authorize` errors for a website callback are answered on the MCP host, never redirected |
+| An agent using several servers sends a code to the wrong one (mix-up) | every authorization response carries `iss` (RFC 9207), advertised in the metadata, so the agent can check which server answered |
 | Someone tampers with the request in the browser | the signed note: changing the callback or hash breaks the signature |
 | A local app pretending to be a well-known agent | "Verified" only for https callbacks on the vendor's own domain; otherwise the page says the app can't be confirmed, and "Only allow an agent you started yourself, just now" |
 | Using the server to fetch internal URLs (CIMD) | https on port 443 only, printable ASCII URLs, no IP literals, every resolved address must be public (also an IPv4 address inside IPv6, such as NAT64) and the connection goes to that checked address (no DNS rebinding), no redirects, no compressed bodies, 10 KB cap, 5 s for the whole download; `MCP_CIMD_TRUSTED_HOSTS` to allow only known vendors |

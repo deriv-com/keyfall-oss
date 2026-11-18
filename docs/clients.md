@@ -27,13 +27,14 @@ const vscodeHref = `vscode:mcp/install?${encodeURIComponent(JSON.stringify({ nam
 
 | Agent | Callback | Allowed because |
 |---|---|---|
-| Claude Code, Codex, Gemini CLI, VS Code | `http://localhost:<port>/…` or `http://127.0.0.1:<port>/…` (a few versions use an https page of their vendor) | http to this computer, or https |
+| Claude Code, Codex, Gemini CLI, VS Code | `http://localhost:<port>/…` or `http://127.0.0.1:<port>/…` (a few versions use an https page of their vendor) | http to this computer, or https (list the vendor's domain if you set `MCP_WEB_REDIRECT_DOMAINS`) |
 | Cursor (desktop) | `cursor://anysphere.cursor-mcp/oauth/callback` | listed app callback (default) |
-| Cursor (some versions) | `https://www.cursor.com/…`, which redirects to `cursor.com` | https; uses the Allow page's navigation hand-off |
+| Cursor (some versions) | `https://www.cursor.com/…`, which redirects to `cursor.com` | https (list `cursor.com` if you set `MCP_WEB_REDIRECT_DOMAINS`); uses the Allow page's navigation hand-off |
 | Web agents (connectors in a vendor's web app) | an https page on the vendor's domain | https. Their MCP calls come from the vendor's cloud, not the person's laptop; block them with `MCP_BLOCKED_REDIRECT_DOMAINS` if your data must not leave that way |
 
 If an agent is refused at `/register`, look up the `redirect_uri` it sent (it is in the MCP
-server's log) and add the exact value to `MCP_EXTRA_REDIRECTS` on **both** hosts.
+server's log) and add the exact value to `MCP_EXTRA_REDIRECTS` on **both** hosts (for a website
+callback, add its domain to `MCP_WEB_REDIRECT_DOMAINS` instead).
 
 ## What the person sees
 

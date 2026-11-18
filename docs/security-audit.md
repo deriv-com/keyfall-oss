@@ -1,11 +1,12 @@
 # Security audit (pre-release)
 
 A review of Keyfall before it is published as `deriv-com/keyfall`. It covers the code and the
-security claims in the docs, at commit `e0c0d94`. Fixes are in the commits that follow it, each
-with a test. The security team's own review comes after this one.
+security claims in the docs, at commit `e0c0d94`. Fixes are in the commits that follow it. Each
+code fix comes with a test that fails without it; the dependency, CI and docs changes have no
+test. The security team's own review comes after this one.
 
-**Result:** no Critical or High findings. 4 Medium, 14 Low, 10 Informational. 22 are fixed,
-5 are accepted with a reason, and 1 Medium is fixed only as an opt-in setting. Its default
+**Result:** no Critical or High findings. 4 Medium, 15 Low, 11 Informational. 23 are fixed,
+6 are accepted with a reason, and 1 Medium is fixed only as an opt-in setting. Its default
 needs a decision (see [Decisions needed](#decisions-needed)).
 
 ## Scope
@@ -26,9 +27,10 @@ bearer-token middleware.
 
 ## Method
 
-1. **Manual review, file by file.** Checked against the MCP authorization spec, OAuth 2.1 and
-   RFC 9700 (OAuth security best current practice). Areas covered:
-   - PKCE;
+1. **Manual review, file by file.** Checked against the MCP authorization spec (version
+   2026-07-28, including its security considerations), OAuth 2.1 and RFC 9700 (OAuth security
+   best current practice). Areas covered:
+   - PKCE, mix-up attacks (RFC 9207) and sender-constrained tokens;
    - the two HS256 hand-off JWTs: algorithm pinning, issuers and audiences, expiry, single use
      of `jti`, claim checks;
    - the redirect rules in both copies, tried against case, IDN, userinfo, ports, IPv6, schemes,
@@ -90,16 +92,18 @@ or **False positive**.
 | KF-16 | Low | `allow_page.py:457`, `:467` | **Blocking calls ran inside `async def` handlers.** Sync Redis, the JWKS download and OIDC discovery block, so one slow call stalled every request to the Allow page. | Fixed. The handlers are plain `def`, so they run in FastAPI's thread pool. |
 | KF-17 | Low | `mcp_server_auth.py:592` | **`MCP_REFRESH_REUSE_ACTION` failed open.** Any value other than exactly `end_grant`, such as a typo, quietly turned reuse detection into logging only. | Fixed. Only `log` does that; anything else ends the grant. |
 | KF-18 | Low | `mcp_server_auth.py:472` | **An admin revoke landing during a code exchange could miss the new grant.** The grant was created after the revoke had already looked for grants, so it came back to life on restore. | Fixed. The flag is read again once the grant exists, and every token needs a live grant (KF-01). |
-| KF-19 | Info | `mcp_server_auth.py:167`, `:301`, `allow_page.py:164` | **Python and browsers read some URLs differently.** On raw strings, Python reads `http://evil.com\@127.0.0.1/` as loopback, while a browser reads it as `evil.com`; `%2E` in a host and an empty fragment differ the same way. CIMD documents were checked raw. Not exploitable end to end, because `authorize()` re-checks the normalized URI. | Fixed. Both copies refuse backslashes, whitespace, control and non-ASCII characters, userinfo, `%` in the host and any `#`. Documents are re-checked after normalizing. A test keeps the two copies identical. |
-| KF-20 | Info | `mcp_server_auth.py:403`, `allow_page.py:198` | **`code_challenge` was never format-checked.** Any string was accepted; the demo took a 6 KB one. | Fixed. It must be a 43-character base64url S256 challenge. |
-| KF-21 | Info | `mcp_server_auth.py:477` | **The used-code marker's lifetime didn't follow the code's expiry.** It lived 300 s by Redis's clock, while the code's `exp` comes from the Allow page's clock, so clock drift could reopen a replay window. PKCE would still be required. | Fixed. The marker is kept until 300 s after the code's own expiry. |
-| KF-22 | Info | `.github/workflows/tests.yml:11-13` | **The CI workflow trusted mutable tags.** Actions were pinned by tag, and the checkout token was persisted. | Fixed. Actions are pinned to commits, with `persist-credentials: false`. |
-| KF-23 | Info | `README.md:88`, `docs/how-it-works.md:102` | **Claims were broader than the code.** "Nothing long-lived ever reaches a laptop" and "every tool call is logged" overstated it: a refresh token chain lasts up to 14 days, and only `@audited` tools are logged. | Fixed (docs). |
-| KF-24 | Info | `login_check/fake.py:21` | **The fake login checks only the Host header.** A remote client can send `Host: localhost`. | Accepted. Demo only, and it needs `DEMO_ONLY=1`. The Host check is what stops DNS rebinding. The demo publishes its ports on 127.0.0.1 only. A peer-address check would be unreliable behind container port forwarding. The docstring now says this. |
-| KF-25 | Info | `mcp_server_auth.py:581` | **Each unknown refresh token costs about 0.5 s of Redis polling** (11 GETs; measured 0.58 s) while the grace record is awaited. | Accepted. It is async and holds no thread. Rate limits at the proxy cover volume. |
-| KF-26 | Info | `mcp_server_auth.py:398` | **DCR client secrets are stored in Redis as issued.** This applies only when a client asks for `client_secret_post`. | Accepted. A secret alone is useless without a refresh token, and agents register as public clients. The README now says only access and refresh tokens are hashed. |
-| KF-27 | Info | `mcp_server_auth.py:668` | **`@audited` records tool arguments**, up to 2,000 characters per field. | Accepted. Setup now tells tool authors to keep secrets and personal data out of arguments. |
-| KF-28 | Info | `allow_page.py:466` | **One signed note and CSRF token can be submitted more than once,** giving several codes. | Accepted. Each code works once and only with the agent's PKCE secret, and the note expires within 10 minutes. |
+| KF-19 | Low | `allow_page.py:485-488`, `mcp_server_auth.py:715` | **No `iss` in authorization responses** (RFC 9207). The MCP spec (2026-07-28) says authorization servers SHOULD include it, error responses included, and advertise `authorization_response_iss_parameter_supported`; it is the defence against mix-up attacks (RFC 9700 §4.4), which matter because agents talk to several MCP servers. Keyfall sent neither. | Fixed. The note carries the MCP server's metadata issuer, the Allow page returns it as `iss` with the code and with `access_denied`, `/authorize` error redirects carry it, and the metadata advertises it. |
+| KF-20 | Info | `mcp_server_auth.py:167`, `:301`, `allow_page.py:164` | **Python and browsers read some URLs differently.** On raw strings, Python reads `http://evil.com\@127.0.0.1/` as loopback, while a browser reads it as `evil.com`; `%2E` in a host and an empty fragment differ the same way. CIMD documents were checked raw. Not exploitable end to end, because `authorize()` re-checks the normalized URI. | Fixed. Both copies refuse backslashes, whitespace, control and non-ASCII characters, userinfo, `%` in the host and any `#`. Documents are re-checked after normalizing. A test keeps the two copies identical. |
+| KF-21 | Info | `mcp_server_auth.py:403`, `allow_page.py:198` | **`code_challenge` was never format-checked.** Any string was accepted; the demo took a 6 KB one. | Fixed. It must be a 43-character base64url S256 challenge. |
+| KF-22 | Info | `mcp_server_auth.py:477` | **The used-code marker's lifetime didn't follow the code's expiry.** It lived 300 s by Redis's clock, while the code's `exp` comes from the Allow page's clock, so clock drift could reopen a replay window. PKCE would still be required. | Fixed. The marker is kept until 300 s after the code's own expiry. |
+| KF-23 | Info | `.github/workflows/tests.yml:11-13` | **The CI workflow trusted mutable tags.** Actions were pinned by tag, and the checkout token was persisted. | Fixed. Actions are pinned to commits, with `persist-credentials: false`. |
+| KF-24 | Info | `README.md:88`, `docs/how-it-works.md:102` | **Claims were broader than the code.** "Nothing long-lived ever reaches a laptop" and "every tool call is logged" overstated it: a refresh token chain lasts up to 14 days, and only `@audited` tools are logged. | Fixed (docs). |
+| KF-25 | Info | `login_check/fake.py:21` | **The fake login checks only the Host header.** A remote client can send `Host: localhost`. | Accepted. Demo only, and it needs `DEMO_ONLY=1`. The Host check is what stops DNS rebinding. The demo publishes its ports on 127.0.0.1 only. A peer-address check would be unreliable behind container port forwarding. The docstring now says this. |
+| KF-26 | Info | `mcp_server_auth.py:581` | **Each unknown refresh token costs about 0.5 s of Redis polling** (11 GETs; measured 0.58 s) while the grace record is awaited. | Accepted. It is async and holds no thread. Rate limits at the proxy cover volume. |
+| KF-27 | Info | `mcp_server_auth.py:398` | **DCR client secrets are stored in Redis as issued.** This applies only when a client asks for `client_secret_post`. | Accepted. A secret alone is useless without a refresh token, and agents register as public clients. The README now says only access and refresh tokens are hashed. |
+| KF-28 | Info | `mcp_server_auth.py:668` | **`@audited` records tool arguments**, up to 2,000 characters per field. | Accepted. Setup now tells tool authors to keep secrets and personal data out of arguments. |
+| KF-29 | Info | `allow_page.py:466` | **One signed note and CSRF token can be submitted more than once,** giving several codes. | Accepted. Each code works once and only with the agent's PKCE secret, and the note expires within 10 minutes. |
+| KF-30 | Info | `mcp_server_auth.py:497` | **Access and refresh tokens are bearer tokens,** not sender-constrained (no DPoP, RFC 9449, or mTLS), which RFC 9700 §2.2 recommends. | Accepted. The MCP spec does not mention sender-constrained tokens and MCP clients don't support them. Exposure is limited by 1-hour access tokens, single-use rotating refresh tokens with reuse detection (KF-01), the 14-day cap and admin revoke. |
 
 ### False positives and non-issues
 
@@ -171,9 +175,14 @@ The new floors (KF-04) start at those versions.
 
 ### bandit 1.9.4
 
-`bandit -r reference demo docs/media/serve.py` scanned 1,478 lines and reported 3 issues: B105
-once and B106 twice, all Low severity and Medium confidence. All three are false positives (see
-above). It reported no Medium or High issues.
+`bandit -r reference demo docs/media/serve.py`:
+
+| Run | Lines scanned | Issues |
+|---|---|---|
+| Audited commit `e0c0d94` | 1,478 | 3 Low (B105 once, B106 twice), all Medium confidence, all false positives (see above) |
+| After the fixes | 1,636 | the same 3 false positives, nothing new |
+
+Neither run reported a Medium or High issue.
 
 ## Hands-on results against the demo
 
@@ -194,6 +203,7 @@ above). It reported no Medium or High issues.
 | Thief refreshing in a loop while reuse is detected | **chain survived 1 of 12** | 0 of 24 |
 | Revoke, then use access and refresh; restore, then use old tokens | refused | refused |
 | Fake login with another Host (DNS rebinding) | 403 | 403 |
+| `iss` on the Allow and Cancel redirects, and the metadata flag | **absent** | present, equal to the metadata issuer and to `authorization_servers` |
 
 ## Decisions needed
 
@@ -206,7 +216,8 @@ above). It reported no Medium or High issues.
    - A related question: should production setups keep open DCR at all, or rely on CIMD with
      `MCP_CIMD_TRUSTED_HOSTS`?
 2. **Reporting KF-02 upstream.** The open redirect comes from the MCP Python SDK's
-   `/authorize` error handling, which every SDK-based server inherits. Keyfall now works around
+   `/authorize` error handling, which every SDK-based server inherits. The MCP spec's security considerations say an
+   authorization server SHOULD only redirect automatically to a redirect URI it trusts. Keyfall now works around
    it; an upstream report would fix it for others.
 3. **Rate limiting.** It stays the proxy's job. The docs now say so, but nothing in the code
    enforces it.
