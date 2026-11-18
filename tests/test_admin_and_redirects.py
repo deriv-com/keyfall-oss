@@ -76,6 +76,8 @@ def test_blocked_domains_and_extra_app_callbacks(monkeypatch):
         assert f("https://agent.example.com/cb") is False
         assert f("https://agent.example.com./cb") is False      # trailing dot: same host, still blocked
         assert f("https://EXAMPLE.COM./cb") is False
+        assert f("https://agent%2Eexample.com/cb") is False     # browsers decode %2E: same host, still blocked
+        assert f("https://%65xample.com/cb") is False
         assert f("myagent://cb") is True
 
 
