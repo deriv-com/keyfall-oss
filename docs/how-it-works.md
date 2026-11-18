@@ -54,8 +54,9 @@ Claude Code, on Alex's laptop), **the MCP server**, **the SSO** and **the Allow 
      listener.
    - **DCR** (Dynamic Client Registration, the older way most agents still use):
      `POST /register` with its name and callback address → a `client_id`, kept 90 days.
-   Either way the callback address must pass the allowlist: https, http to this computer
-   only, or a listed app callback.
+   Either way the callback address must pass the callback rules: https, http to this computer
+   only, or a listed app callback. Any https site passes unless `MCP_WEB_REDIRECT_DOMAINS`
+   lists the sites allowed.
 
 ### 3. The agent prepares (on Alex's laptop)
 1. Makes a random **secret** (PKCE `code_verifier`) and keeps it in memory.
@@ -99,7 +100,8 @@ Claude Code, on Alex's laptop), **the MCP server**, **the SSO** and **the Allow 
 ### 8. Using it
 Every `/mcp` call carries `Authorization: Bearer <access token>`. The server looks it up, checks
 the revoke flag and hands the tools Alex's email and role (`caller()`). Tools hide what the role
-may not see, on the server, and every call is written to the audit trail.
+may not see, on the server, and every call to a tool wrapped in `@audited` is written to the
+audit trail.
 
 ### 9. Staying signed in, and the end
 - **Every hour** the agent swaps its refresh token for a new pair, silently. Each refresh token
@@ -151,22 +153,26 @@ no secret, and SHA-256 can't be reversed to find it.
 |---|---|
 | API key copied from a laptop, repo or backup | there is none; nothing long-lived is stored on the laptop |
 | Code stolen from a URL, history or log | PKCE: the code is useless without the secret |
-| Agent tricked into sending the code elsewhere | callback allowlist, checked at registration, `/authorize` and on the Allow page; the code is bound to the callback |
+| Agent tricked into sending the code elsewhere | callback rules (https, http only to this computer, or a listed app callback), checked at registration, `/authorize` and on the Allow page, with one reading for every URL parser (no `\`, `user@`, `%` in the host or control characters); the code is bound to the callback |
+| A link to the Allow page for someone else's agent (consent phishing) | the page names where the code goes and whether the agent's name is verified; Allow can't be hit by a stray Enter or in the first 0.7 s; `MCP_WEB_REDIRECT_DOMAINS` limits which websites may receive codes (any https site by default) |
+| The public host used as an open redirector | `/authorize` errors for a website callback are answered on the MCP host, never redirected |
 | Someone tampers with the request in the browser | the signed note: changing the callback or hash breaks the signature |
 | A local app pretending to be a well-known agent | "Verified" only for https callbacks on the vendor's own domain; otherwise the page says the app can't be confirmed, and "Only allow an agent you started yourself, just now" |
-| Using the server to fetch internal URLs (CIMD) | https only, no IP literals, every resolved address must be public and the connection goes to that checked address (no DNS rebinding), no redirects, 10 KB cap; `MCP_CIMD_TRUSTED_HOSTS` to allow only known vendors |
+| Using the server to fetch internal URLs (CIMD) | https on port 443 only, printable ASCII URLs, no IP literals, every resolved address must be public (also an IPv4 address inside IPv6, such as NAT64) and the connection goes to that checked address (no DNS rebinding), no redirects, no compressed bodies, 10 KB cap, 5 s for the whole download; `MCP_CIMD_TRUSTED_HOSTS` to allow only known vendors |
 | Dodging the blocked-domain list (`example.com.`) | host names are compared without the trailing dot; metadata URLs ending in a dot are refused |
-| Clickjacking the Allow button | `frame-ancestors 'none'`, `X-Frame-Options: DENY` |
+| Clickjacking the Allow button | `frame-ancestors 'none'`, `X-Frame-Options: DENY`; the buttons ignore clicks for 0.7 s (double-click hijacking) and none has focus on load |
 | A forged Allow submission | CSRF token tied to the person and the signed note |
 | A forged code | HS256 signature with the shared key; distinct audiences |
 | A code used twice | `SET code-used:<id> NX` |
-| A stolen refresh token | rotation + reuse detection end the chain; 14-day cap |
+| A stolen refresh token | rotation + reuse detection end the chain; every token is checked against its grant, so a refresh in flight when the grant ends can't revive it; 14-day cap |
 | A person who should lose access now | admin revoke: flag checked on every code, refresh and call |
 | A person removed from the SSO group | access ends when their grant ends (at most 14 days); revoke for immediately |
 | Redis down during approval | fails closed: no Allow button |
+| Redis filled up through the open `/register` | each registration is capped (10 callbacks, 8 KB); run Redis with `maxmemory-policy noeviction` so revoke flags are never evicted, and rate-limit the public endpoints at the proxy |
 | A tool leaking data a role shouldn't see | the role is enforced on the server inside each tool |
 
 What it does **not** protect against: malware on the person's laptop that reads the agent's
 memory or token store, a compromised SSO account, or a malicious agent the person chooses to
-allow. The Allow page's "Only allow an agent you started yourself, just now" line is there for
-the last one.
+allow, including one that arrives as a link they didn't start. The Allow page's "Only allow an
+agent you started yourself, just now" line is there for the last one, and
+`MCP_WEB_REDIRECT_DOMAINS` narrows it. The full review is in [security-audit.md](security-audit.md).

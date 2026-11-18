@@ -94,12 +94,23 @@ MCP_SCOPE=mcp
 ```
 
 Client ID Metadata Documents: `/authorize` is reachable by anyone, and a `client_id` that is an
-https URL makes the server download it. The download refuses private addresses, redirects and
-anything over 10 KB, and connects to the exact address it checked (so DNS rebinding can't swap in
-an internal one). In production, also set `MCP_CIMD_TRUSTED_HOSTS` to the vendors your people
-use, so the server only ever fetches from them. Agents using a metadata URL from any
+https URL makes the server download it. The download accepts only port 443 and printable ASCII
+URLs, refuses private addresses (also when wrapped in IPv6, such as NAT64), redirects, compressed
+bodies and anything over 10 KB, gives up after 5 seconds in total, and connects to the exact
+address it checked (so DNS rebinding can't swap in an internal one). In production, also set
+`MCP_CIMD_TRUSTED_HOSTS` to the vendors your people use, so the server only ever fetches from them. Agents using a metadata URL from any
 other host are refused (they don't fall back to `/register` on their own); if that's a problem,
 set `MCP_CIMD_ENABLED=false` so the server stops offering CIMD and every agent uses `/register`.
+
+Website callbacks: `/register` is open, so anyone can register an agent whose callback is their
+own website, then send a person a link to the Allow page. If that person clicks **Allow**, the
+code goes to that website, and its owner can redeem it (they chose the PKCE secret). The page
+says where the code goes, but that is the only check. Most agents return to `localhost` or an
+app callback, so set `MCP_WEB_REDIRECT_DOMAINS` to the websites you actually use (or to a domain
+nobody uses, such as `invalid`, to allow none); `localhost` and app callbacks are not affected.
+
+Audit trail: `@audited` records each tool call's arguments (up to 2,000 characters per field).
+If a tool takes a secret or personal data as an argument, leave it out of the record.
 
 ## 5. Infrastructure
 
@@ -107,7 +118,13 @@ set `MCP_CIMD_ENABLED=false` so the server stops offering CIMD and every agent u
   `/revoke` itself; no SSO proxy, no login page in front of them.
 - Reverse proxy: `proxy_buffering off`, `proxy_http_version 1.1`, `proxy_read_timeout 300s`, and
   forward `Host` and `X-Forwarded-Proto`. Buffering breaks streaming responses.
-- Redis: both hosts, same `REDIS_URL` and `MCP_REDIS_PREFIX`. Use TLS (`rediss://`) across networks.
+- Redis: both hosts, same `REDIS_URL` and `MCP_REDIS_PREFIX`. Use TLS (`rediss://`) across networks,
+  and a password. Set `maxmemory-policy noeviction` (or a `volatile-*` policy): an `allkeys-*`
+  policy lets Redis evict revoke flags and used-code markers when it fills up, and `/register`
+  is open to anyone.
+- Rate-limit `/register`, `/authorize` and `/token` per client IP at the proxy. They are public
+  and unauthenticated by design; the server caps what one call can store or fetch, not how many
+  calls arrive.
 - Optional: per-person rate limits on tool calls, in the same Redis (count calls per email per
   window inside `audited`).
 
@@ -120,11 +137,12 @@ set `MCP_CIMD_ENABLED=false` so the server stops offering CIMD and every agent u
 | `MCP_REDIS_PREFIX` | ✓ | ✓ (same value) | `keyfall:` |
 | `MCP_EXTRA_REDIRECTS` | ✓ | ✓ (same value) | none (Cursor's app callback is built in) |
 | `MCP_BLOCKED_REDIRECT_DOMAINS` | ✓ | ✓ (same value) | none |
+| `MCP_WEB_REDIRECT_DOMAINS` | ✓ | ✓ (same value) | any https site (see "Website callbacks") |
 | `MCP_ISSUER_URL` | ✓ | | `https://mcp.example.com` |
 | `MCP_ALLOW_PAGE_URL` | ✓ | | `https://portal.example.com/connect-agent/authorize` |
 | `MCP_SCOPE` | ✓ | | `mcp` |
 | `MCP_REFRESH_GRACE_SECONDS` | ✓ | | `30` (max 120) |
-| `MCP_REFRESH_REUSE_ACTION` | ✓ | | `end_grant` (or `log`) |
+| `MCP_REFRESH_REUSE_ACTION` | ✓ | | `end_grant` (`log` only records; any other value ends the grant) |
 | `MCP_CIMD_ENABLED` | ✓ | | `true` |
 | `MCP_CIMD_TRUSTED_HOSTS` | ✓ | | any public host |
 | `LOGIN_CHECK` + its variables | | ✓ | required |

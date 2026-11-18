@@ -10,7 +10,7 @@ and CI logs. This repo is a reference implementation that removes those keys ent
 - Their SSO proves who they are; their SSO groups decide what the agent may do.
 - The agent gets short-lived tokens: a 60-second one-time code, a 1-hour access token and a
   refresh-token chain that ends after 14 days.
-- An admin can cut a person off instantly, and every tool call is logged.
+- An admin can cut a person off instantly, and every tool call wrapped in `@audited` is logged.
 
 It is plain OAuth 2.1 with PKCE, as the [MCP authorization spec](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)
 describes, so every MCP client that supports remote servers works without changes.
@@ -85,14 +85,19 @@ with versioned releases.
 
 ## Security
 
-- Nothing long-lived ever reaches a laptop. Redis stores only SHA-256 hashes of tokens.
+- No API key ever reaches a laptop. The longest-lived credential is a refresh token that works
+  once, in a chain that ends 14 days after Allow. Redis stores only SHA-256 hashes of access and
+  refresh tokens.
 - The one-time code is useless without the PKCE secret, which never leaves the agent.
 - A rotated refresh token that comes back after a 30-second grace window ends the whole grant,
   so a stolen chain dies as soon as the real agent refreshes.
 - The Allow page shows nothing to click unless every check passes, including the revoke list.
+- By default a code may go to any https website the agent registers; set
+  `MCP_WEB_REDIRECT_DOMAINS` to the ones you use ([setup](docs/setup.md#4-the-mcp-server)).
 
 Read [docs/how-it-works.md](docs/how-it-works.md#what-protects-what) for what each piece defends
-against, and [SECURITY.md](SECURITY.md) to report a vulnerability.
+against, [docs/security-audit.md](docs/security-audit.md) for the pre-release security review, and
+[SECURITY.md](SECURITY.md) to report a vulnerability.
 
 ## Run the tests
 

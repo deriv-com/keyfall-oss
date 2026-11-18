@@ -29,3 +29,8 @@ infrastructure (TLS, Redis access, secret storage).
   and doesn't protect against.
 - Never deploy with `LOGIN_CHECK=fake` or `DEMO_ONLY=1`.
 - Keep `MCP_SIGNING_KEY` in a secret manager; anyone with it can mint approval codes.
+- Run Redis with a password, TLS across networks and `maxmemory-policy noeviction`, and
+  rate-limit the public `/register`, `/authorize` and `/token` endpoints at your proxy.
+- Set `MCP_WEB_REDIRECT_DOMAINS` (and `MCP_CIMD_TRUSTED_HOSTS`) to what your agents use.
+- [docs/security-audit.md](docs/security-audit.md) lists what was reviewed before release and
+  what was accepted.

@@ -1,7 +1,9 @@
 """DEMO ONLY: pretends a person is signed in, so the demo runs without any SSO.
 
-Refuses to work unless DEMO_ONLY=1 is set AND the request was made to localhost / 127.0.0.1.
-Never deploy this.
+Refuses to work unless DEMO_ONLY=1 is set AND the request's Host is localhost / 127.0.0.1 / ::1.
+The Host check stops DNS rebinding (a web page pointing its own name at 127.0.0.1). It is not a
+network check: anyone who can reach the port can send "Host: localhost". What keeps others out is
+the demo publishing its ports on 127.0.0.1 only. Never deploy this.
 
     FAKE_LOGIN_EMAIL    default alice@example.com
     FAKE_LOGIN_NAME     default Alice Example
