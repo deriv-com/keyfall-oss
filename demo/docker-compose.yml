@@ -1,0 +1,48 @@
+# Demo: the MCP server, the Allow page and Redis on your laptop. No SSO needed: the Allow page
+# uses the demo-only fake login (alice@example.com). Never deploy this file as it is.
+#
+#   docker compose up --build
+#   claude mcp add --transport http demo http://localhost:8000/mcp
+name: keyfall-demo
+
+x-app: &app
+  build:
+    context: ..
+    dockerfile: demo/Dockerfile
+  depends_on: [redis]
+  restart: unless-stopped
+
+x-shared: &shared
+  # Demo key. In real use: a random value of 32+ bytes from your secret manager, same on both hosts.
+  MCP_SIGNING_KEY: ${MCP_SIGNING_KEY:-demo-only-key-do-not-use-in-production-0123456789}
+  MCP_REDIS_PREFIX: "keyfall:"
+  REDIS_URL: redis://redis:6379/0
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  # The public host: discovery, /register, /authorize, /token, /revoke and /mcp.
+  mcp:
+    <<: *app
+    command: uvicorn demo_server:create_app --factory --host 0.0.0.0 --port 8000
+    environment:
+      <<: *shared
+      MCP_ISSUER_URL: http://localhost:8000
+      MCP_ALLOW_PAGE_URL: http://localhost:8001/connect-agent/authorize
+    ports: ["127.0.0.1:8000:8000"]
+
+  # The SSO-protected host: the Allow page. Here, a fake login stands in for your SSO.
+  allow:
+    <<: *app
+    command: uvicorn allow_app:app --host 0.0.0.0 --port 8001
+    environment:
+      <<: *shared
+      LOGIN_CHECK: fake
+      DEMO_ONLY: "1"
+      FAKE_LOGIN_EMAIL: ${FAKE_LOGIN_EMAIL:-alice@example.com}
+      FAKE_LOGIN_NAME: ${FAKE_LOGIN_NAME:-Alice Example}
+      FAKE_LOGIN_GROUPS: ${FAKE_LOGIN_GROUPS:-mcp-user}
+      MCP_APP_NAME: Demo App
+    ports: ["127.0.0.1:8001:8001"]

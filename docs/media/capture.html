@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Render an animation to GIF</title>
+<style>body{font:13px/1.5 system-ui,sans-serif;background:#181C25;color:#E9EDF3;margin:24px}
+#bar{height:4px;background:#2B303C;margin:10px 0;width:480px}#bar b{display:block;height:4px;width:0;background:#FF444F}
+iframe{border:0;position:absolute;left:-20000px;top:0}img{max-width:100%;margin-top:12px;border-radius:8px}</style></head>
+<body>
+<b>Render an animation to GIF</b>
+<div id="status">starting…</div><div id="bar"><b></b></div><img id="preview" alt="">
+<iframe id="frame"></iframe>
+<script type="module">
+// Usage (with docs/media/serve.py running):
+//   capture.html?src=tour.html&out=tour.gif&fps=10&width=1280
+//   capture.html?src=flow.html&out=flow.gif&fps=8&width=1500&png=flow.png
+// The source page defines window.DURATION (ms) and window.render(t). Each frame is drawn,
+// rasterised at 2x, scaled to `width`, identical frames are merged, and every frame uses one
+// shared palette. The GIF (and optional PNG of the last frame) are saved into docs/img/.
+import { toCanvas, getFontEmbedCSS } from "https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/+esm";
+import { GIFEncoder, quantize, applyPalette } from "https://cdn.jsdelivr.net/npm/gifenc@1.0.3/+esm";
+
+const q = new URLSearchParams(location.search);
+const src = q.get("src"), out = q.get("out"), png = q.get("png");
+const fps = +q.get("fps") || 10, width = +q.get("width") || 1280;
+const status = t => (document.getElementById("status").textContent = t);
+const progress = f => (document.querySelector("#bar b").style.width = `${Math.round(f * 100)}%`);
+window.captureDone = false;
+
+async function run() {
+  const iframe = document.getElementById("frame");
+  const vw = +q.get("vw"), vh = +q.get("vh");     // optional viewport for responsive pages
+  if (vw) { iframe.width = vw; iframe.height = vh || 800; }
+  await new Promise(ok => { iframe.onload = ok; iframe.src = src; });
+  const win = iframe.contentWindow, doc = win.document;
+  await doc.fonts.ready;
+  const W = vw || doc.documentElement.scrollWidth, H = vh || doc.documentElement.scrollHeight;
+  iframe.width = W; iframe.height = H;
+  const height = Math.round(width * H / W), step = 1000 / fps, duration = win.DURATION;
+  const node = doc.body;
+  const fontEmbedCSS = await getFontEmbedCSS(node);
+  const outCanvas = Object.assign(document.createElement("canvas"), { width, height });
+  const ctx = outCanvas.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingQuality = "high";
+
+  let big;
+  async function frameAt(t) {
+    win.render(t);
+    big = await toCanvas(node, { pixelRatio: 2, width: W, height: H, fontEmbedCSS, cacheBust: false });
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(big, 0, 0, width, height);
+    return ctx.getImageData(0, 0, width, height).data;
+  }
+
+  // Pass 1: a shared palette from frames spread over the whole animation.
+  const samples = [];
+  for (let i = 0; i < 12; i++) {
+    status(`building palette ${i + 1}/12`);
+    samples.push(new Uint8Array((await frameAt(duration * i / 12)).buffer.slice(0)));
+  }
+  const all = new Uint8Array(samples.reduce((n, s) => n + s.length, 0));
+  samples.reduce((o, s) => (all.set(s, o), o + s.length), 0);
+  const palette = quantize(all, 255);
+  const TI = palette.length, gifPalette = [...palette, [0, 0, 0]];   // last entry = transparent
+
+  // Pass 2: render, merge identical frames, encode. After the first frame, pixels that did not
+  // change are written as transparent over the previous frame, which keeps the file small.
+  const gif = GIFEncoder();
+  let pending = null, pendingMs = 0, first = true, frames = 0, shown = null;
+  const flush = () => {
+    if (!pending) return;
+    const idx = applyPalette(pending, palette);
+    let out = idx;
+    if (shown) {
+      out = new Uint8Array(idx.length);
+      for (let i = 0; i < idx.length; i++) {
+        if (idx[i] === shown[i]) out[i] = TI; else { out[i] = idx[i]; shown[i] = idx[i]; }
+      }
+    } else shown = idx.slice();
+    gif.writeFrame(out, width, height, {
+      palette: first ? gifPalette : undefined, delay: Math.max(20, Math.round(pendingMs / 10) * 10),
+      repeat: 0, transparent: !first, transparentIndex: TI, dispose: 1 });
+    first = false; frames++;
+  };
+  for (let t = 0; t < duration; t += step) {
+    const data = await frameAt(t);
+    const a = new Uint32Array(data.buffer);
+    if (pending && a.length === pending.length / 4 && a.every((v, i) => v === pendingView[i])) { pendingMs += step; }
+    else { flush(); pending = new Uint8ClampedArray(data); var pendingView = new Uint32Array(pending.buffer); pendingMs = step; }
+    progress(t / duration); status(`frame at ${(t / 1000).toFixed(1)} s`);
+  }
+  flush();
+  gif.finish();
+  const blob = new Blob([gif.bytes()], { type: "image/gif" });
+  if (out) await fetch(`/save/${out}`, { method: "POST", body: blob });
+  document.getElementById("preview").src = URL.createObjectURL(blob);
+  if (png) {
+    const pngBlob = await new Promise(ok => big.toBlob(ok, "image/png"));
+    await fetch(`/save/${png}`, { method: "POST", body: pngBlob });
+  }
+  progress(1);
+  const mb = (blob.size / 1e6).toFixed(1);
+  status((out ? `saved docs/img/${out}: ${frames} frames, ${(duration / 1000).toFixed(1)} s, ${width}x${height}, ${mb} MB`
+              : "rendered") + (png ? ` · saved docs/img/${png}` : ""));
+  window.captureDone = `${frames} frames, ${mb} MB`;
+}
+run().catch(e => { status("failed: " + e); window.captureDone = "failed: " + e; console.error(e); });
+</script>
+</body></html>

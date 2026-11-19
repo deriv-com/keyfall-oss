@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Who does what · sign-in flow</title>
+<!-- Source of docs/img/flow.gif and docs/img/flow.png (render with capture.html). Defines
+     DURATION and render(t); open with #play to watch it live. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+:root{--coral:#FF444F;--slate:#181C25;--ink:#F5F6F8;--muted:#A3AAB8;--faint:#5E6575;--line:#2B303C;--grid:#252A35;
+  --p:#FF444F;--c:#E8B04B;--a:#3FC1A5;--g:#7C95FF;--m:#C9CED8}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1000px;height:760px;overflow:hidden;background:var(--slate);color:var(--ink);font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{position:relative;width:1000px;height:760px;padding:24px 30px 0;
+  background:radial-gradient(560px 360px at 12% 8%,rgba(255,68,79,.09),transparent 70%),
+             radial-gradient(1px 1px at 1px 1px,rgba(255,255,255,.05) 1px,transparent 1.5px) 0 0/22px 22px,
+             linear-gradient(180deg,#1A1E28,#14171F)}
+.caps{font-size:7.5px;letter-spacing:.22em;text-transform:uppercase;font-weight:600}
+.top{display:flex;justify-content:space-between;align-items:center}
+.brand{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700}.brand svg{width:19px;height:19px}.brand em{font-style:normal;color:var(--coral)}
+.tag{color:var(--muted)}.tag:before{content:"";display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--coral);margin-right:7px;vertical-align:1px}
+.eyebrow{color:var(--coral);display:flex;align-items:center;gap:8px;margin-top:22px}.eyebrow:before{content:"";width:16px;height:1px;background:var(--coral)}
+h1{font-size:27px;font-weight:800;letter-spacing:-.03em;margin-top:9px;line-height:1.08}h1 em{font-style:normal;color:var(--coral)}
+.sub{font-size:11px;color:var(--muted);margin-top:8px}
+code{font:600 9.5px "JetBrains Mono",ui-monospace,monospace;background:#262B37;border:1px solid #333948;border-radius:4px;padding:0 4px;color:#E9EDF3}
+.legend{display:flex;gap:16px;align-items:center;font-size:9.5px;color:#C9CED8;margin-top:12px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;border:1.5px solid}
+.dash{border-style:dashed;border-color:#7D8494}
+.dotline{display:inline-block;width:22px;height:1.3px;background:#7D8494;position:relative}
+.dotline:before{content:"";position:absolute;left:-2px;top:-1.6px;width:4.5px;height:4.5px;border-radius:50%;background:#7D8494}
+
+.board{position:relative;margin-top:14px;display:grid;grid-template-columns:112px repeat(7,1fr);
+  grid-template-rows:62px 75px 90px 85px 83px 92px;background:rgba(17,20,27,.72);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.cell{border-left:1px solid var(--grid);border-top:1px solid var(--grid)}
+.side{border-top:1px solid var(--grid);padding:10px 8px 10px 11px;background:rgba(255,255,255,.015)}
+.hcell{border-left:1px solid var(--grid);padding:9px 10px;background:rgba(255,255,255,.02)}
+.hside{display:flex;align-items:flex-end;padding:0 11px 9px;font-size:7.5px;color:var(--faint);letter-spacing:.14em;text-transform:uppercase;font-weight:600;background:rgba(255,255,255,.02)}
+.num{font-size:15px;font-weight:800;line-height:1;color:#7D8494}
+.hcell.on .num{color:var(--coral)}
+.pname{font-size:10.5px;font-weight:700;margin-top:8px}
+.psub{font-size:7.7px;color:var(--muted);margin-top:3px}
+.lane{display:flex;gap:7px;align-items:flex-start;padding-top:12px}.lane .sw{margin-top:2px;flex:none}
+.lname{font-size:10.5px;font-weight:700;line-height:1.2}
+.lsub{font-size:7.3px;color:var(--muted);line-height:1.4;margin-top:2px}
+.card{position:absolute;border:1.2px solid;border-radius:7px;padding:7px 8px;z-index:2;background:#1C212B}
+.card.dashed{border-style:dashed}
+.card .ct{font-size:9.8px;font-weight:700;line-height:1.25}
+.card .cs{font-size:7.6px;color:var(--muted);line-height:1.42;margin-top:3px}
+.card.now{box-shadow:0 0 0 3px rgba(255,68,79,.22),0 10px 28px rgba(255,68,79,.18);border-color:var(--coral)!important;background:#2A1E24}
+.p{border-color:var(--p)}.p .ct{color:#FF7A82}.c{border-color:var(--c)}.c .ct{color:#F3C978}.a{border-color:var(--a)}.a .ct{color:#6FDCC2}
+.g{border-color:var(--g)}.g .ct{color:#A9B9FF}.m{border-color:var(--m)}.m .ct{color:#F0F2F5}
+.sw.p{border-color:var(--p)}.sw.c{border-color:var(--c)}.sw.a{border-color:var(--a)}.sw.g{border-color:var(--g)}.sw.m{border-color:var(--m)}
+svg.arrows{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none;overflow:visible}
+.lbl{position:absolute;z-index:4;font-size:7.6px;font-weight:600;color:#C9CED8;white-space:nowrap;background:#161A22;padding:0 4px;line-height:1.35;border-radius:3px}
+.brackets{display:grid;grid-template-columns:112px repeat(7,1fr);margin-top:10px;height:30px}
+.br{border:1px solid #3A4050;border-top:none;height:6px;position:relative;margin:0 6px}
+.br div{position:absolute;top:12px;left:0;right:0;text-align:center;font-size:9px;color:var(--muted)}
+.step{position:absolute;left:30px;right:30px;bottom:24px;display:flex;align-items:center;gap:16px;color:var(--muted)}
+.step .now{flex:none;width:450px;font-size:10px;letter-spacing:0;text-transform:none;color:#E9EDF3;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.step .now b{color:var(--coral);font-weight:700;margin-right:6px}
+#bar{flex:1;display:flex;gap:4px}#bar i{flex:1;height:2px;background:var(--line);position:relative;overflow:hidden}#bar i b{position:absolute;inset:0 auto 0 0;background:var(--coral)}
+#count{font-variant-numeric:tabular-nums}
+</style></head>
+<body><div class="wrap">
+  <div class="top"><div class="brand"><svg viewBox="0 0 250 250"><rect width="250" height="250" rx="62.5" fill="#FF444F"/><path fill="#fff" d="m156.97 51.47-8.1 45.92h-28.11c-26.22 0-51.22 21.24-55.85 47.47l-1.96 11.16c-4.61 26.22 12.88 47.47 39.11 47.47h23.44c19.11 0 37.32-15.47 40.68-34.58l21.59-122.38-30.81 4.95Zm-19.94 113.1c-1.03 5.9-6.35 10.71-12.25 10.71h-14.24c-11.79 0-19.67-9.57-17.6-21.37l1.23-6.96c2.09-11.79 13.34-21.37 25.12-21.37h24.62l-6.88 39Z"/></svg><span>Deriv <em id="pname"></em></span></div>
+    <div class="tag caps">MCP without API keys</div></div>
+  <div class="eyebrow caps">How it works</div>
+  <h1>Who does what, <em>from click to tool call.</em></h1>
+  <p class="sub">An AI agent connects to an MCP server with company SSO, phase by phase. The person clicks twice: <code>Add</code> and <code>Allow</code>. Arrows show what has to happen first.</p>
+  <div class="legend">
+    <span><i class="sw p"></i>Person</span><span><i class="sw c"></i>SSO proxy</span><span><i class="sw a"></i>Allow page</span>
+    <span><i class="sw g"></i>Agent</span><span><i class="sw m"></i>MCP server</span>
+    <span><i class="sw dash"></i>only sometimes</span><span><i class="dotline"></i>must happen first</span>
+  </div>
+  <div class="board" id="board"></div>
+  <div class="brackets"><span></span><span></span>
+    <div class="br" style="grid-column:3/7"><div>Phases 2–5 run once per agent, then again about every 14 days</div></div>
+    <div class="br" style="grid-column:7/9"><div>Every day</div></div></div>
+  <div class="step caps"><div class="now" id="now"></div><div id="bar"></div><span id="count"></span></div>
+</div>
+<script>
+const NAME = "Keyfall";
+document.getElementById("pname").textContent = NAME;
+const phases=[["1","Install","one click, once"],["2","Discover","where to sign in"],["3","Sign in","the existing SSO wall"],
+  ["4","Approve","the only decision"],["5","Get tokens","one-time code swapped"],["6","Use","every question"],["7","Stay signed in","silent, up to 14 days"]];
+const lanes=[["p","Person","in a browser"],["c","SSO proxy","identity-aware proxy in front of the Allow page"],["a","Allow page","behind the proxy"],
+  ["g","Agent","Claude Code · Cursor · Codex · VS Code · Gemini"],["m","MCP server","public · token on every call"]];
+const cards=[
+  {id:"add",l:"p",c:1,t:"Click “Add”",s:"one button or command per agent"},
+  {id:"save",l:"g",c:1,t:"Saves the MCP URL",s:"just the URL · nothing secret"},
+  {id:"first",l:"g",c:2,t:"First call to /mcp",s:"no token yet"},
+  {id:"where",l:"m",c:2,t:"Says where to sign in",s:"401 + sign-in details · agent identifies itself"},
+  {id:"browser",l:"p",c:3,t:"Browser opens",s:"sign-in link + PKCE hash"},
+  {id:"sso",l:"c",c:3,t:"SSO login + MFA",s:"only if the session expired · people outside the groups stop",d:1},
+  {id:"reads",l:"a",c:3,t:"Reads email + role",s:"checks the proxy's signed token · SSO group → role"},
+  {id:"allow",l:"p",c:4,t:"Clicks Allow",s:"sees which agent and which role"},
+  {id:"code",l:"a",c:4,t:"Signs a one-time code",s:"valid 60 s · shared signing key"},
+  {id:"swap",l:"g",c:5,t:"Swaps code for tokens",s:"code + PKCE secret · accepted once"},
+  {id:"issue",l:"m",c:5,t:"Issues tokens",s:"access 1 h · refresh chain 14 d · email + role"},
+  {id:"calls",l:"g",c:6,t:"Calls tools",s:"every call carries the access token"},
+  {id:"check",l:"m",c:6,t:"Checks token, runs tool",s:"role decides what comes back · audit line"},
+  {id:"refresh",l:"g",c:7,t:"Refreshes hourly",s:"the person sees nothing"},
+  {id:"revoked",l:"m",c:7,t:"Revoked or 14 days",s:"browser opens again → click Allow",d:1},
+];
+const arrows=[
+  {f:"add",t:"save",k:"down",lb:"install link or command"},
+  {f:"save",t:"first",k:"side"},
+  {f:"first",t:"where",k:"down",lb:"no token"},
+  {f:"where",t:"browser",k:"side",lb:"agent opens the browser",x:"left",at:.5},
+  {f:"browser",t:"sso",k:"down"},
+  {f:"sso",t:"reads",k:"down",lb:"signed identity + groups"},
+  {f:"reads",t:"allow",k:"side",lb:"“Allow?”",x:"right",at:.6},
+  {f:"allow",t:"code",k:"down",lb:"Allow"},
+  {f:"code",t:"swap",k:"side",lb:"code, via the browser",x:"center",at:.62},
+  {f:"swap",t:"issue",k:"down",lb:"code + secret"},
+  {f:"issue",t:"calls",k:"side",lb:"tokens",x:"center",at:.4},
+  {f:"calls",t:"check",k:"down",lb:"token on every call"},
+  {f:"calls",t:"refresh",k:"side"},
+  {f:"refresh",t:"revoked",k:"down",lb:"refresh token"},
+];
+const board=document.getElementById("board");
+const el=(tag,cls,html,style)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(html)e.innerHTML=html;if(style)e.style.cssText=style;return e};
+board.appendChild(el("div","hside","Actor · Phase"));
+const heads=phases.map(p=>board.appendChild(el("div","hcell",`<div class="num">${p[0]}</div><div class="pname">${p[1]}</div><div class="psub">${p[2]}</div>`)));
+lanes.forEach(l=>{board.appendChild(el("div","side lane",`<i class="sw ${l[0]}"></i><div><div class="lname">${l[1]}</div><div class="lsub">${l[2]}</div></div>`));
+  for(let i=0;i<7;i++) board.appendChild(el("div","cell"));});
+const bb=board.getBoundingClientRect(), cells=[...board.children];
+const cellAt=(laneIdx,col)=>cells[8+laneIdx*8+col];
+const laneIx=Object.fromEntries(lanes.map((l,i)=>[l[0],i]));
+const box={}, cardEl={};
+cards.forEach(c=>{const r=cellAt(laneIx[c.l],c.c).getBoundingClientRect();
+  cardEl[c.id]=board.appendChild(el("div",`card ${c.l}${c.d?" dashed":""}`,`<div class="ct">${c.t}</div><div class="cs">${c.s}</div>`,
+    `left:${r.left-bb.left+8}px;top:${r.top-bb.top+8}px;width:${r.width-16}px`));});
+cards.forEach(c=>{const r=cardEl[c.id].getBoundingClientRect();
+  box[c.id]={l:r.left-bb.left,r:r.right-bb.left,t:r.top-bb.top,b:r.bottom-bb.top,cx:(r.left+r.right)/2-bb.left};});
+const NS="http://www.w3.org/2000/svg", svg=document.createElementNS(NS,"svg");svg.setAttribute("class","arrows");
+svg.innerHTML=`<defs><marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker>
+<marker id="d" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3.6" markerHeight="3.6"><circle cx="5" cy="5" r="4" fill="context-stroke"/></marker></defs>`;
+board.appendChild(svg);
+const arrowEls=arrows.map(a=>{
+  const A=box[a.f],B=box[a.t];let d,lx,ly;
+  if(a.k==="down"){d=`M${A.cx},${A.b} V${B.t-1}`;lx=A.cx;ly=(A.b+B.t)/2;}
+  else{const gx=(A.r+B.l)/2,ya=A.t+24,yb=B.t+24;
+    d=Math.abs(ya-yb)<1?`M${A.r},${ya} H${B.l-1}`:`M${A.r},${ya} H${gx} V${yb} H${B.l-1}`;lx=gx;ly=ya+(yb-ya)*(a.at??.5);}
+  const p=document.createElementNS(NS,"path");p.setAttribute("d",d);p.setAttribute("fill","none");p.setAttribute("stroke-width","1.2");
+  p.setAttribute("marker-end","url(#h)");p.setAttribute("marker-start","url(#d)");svg.appendChild(p);
+  let L=null;if(a.lb){L=el("div","lbl",a.lb);board.appendChild(L);const w=L.offsetWidth,h=L.offsetHeight,al=a.k==="down"?"center":a.x||"center";
+    L.style.left=(al==="left"?lx-w-3:al==="right"?lx+3:lx-w/2)+"px";L.style.top=(ly-h/2)+"px";}
+  return {p,L,len:p.getTotalLength(),target:cards.findIndex(c=>c.id===a.t)};});
+
+// timeline: one step per card, then the whole picture held
+const STEP=1000, HOLD=3500, N=cards.length;
+window.DURATION=N*STEP+HOLD;
+const bar=document.getElementById("bar");for(let i=0;i<N;i++)bar.innerHTML+="<i><b></b></i>";
+const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x)), ease=x=>x<.5?2*x*x:1-Math.pow(-2*x+2,2)/2;
+window.render=function(t){
+  t=((t%DURATION)+DURATION)%DURATION;
+  const done=t>=N*STEP, k=done?N:Math.floor(t/STEP), u=done?1:(t-k*STEP)/STEP;
+  cards.forEach((c,i)=>{const e=cardEl[c.id];
+    const vis=done||i<k?1:i===k?ease(clamp(u/.35)):0;
+    e.style.opacity=done||i<=k?.2+.8*vis:.12;
+    e.classList.toggle("now",!done&&i===k);});
+  arrowEls.forEach(a=>{
+    const drawn=done||a.target<k?1:a.target===k?ease(clamp(u/.35)):0;
+    a.p.style.strokeDasharray=a.len;a.p.style.strokeDashoffset=a.len*(1-drawn);
+    a.p.setAttribute("stroke",!done&&a.target===k?"#FF444F":"#6E7585");
+    a.p.style.opacity=drawn>0?1:0;
+    if(a.L)a.L.style.opacity=drawn>.6?1:0;});
+  const phase=done?-1:cards[Math.min(k,N-1)].c-1;
+  heads.forEach((h,i)=>h.classList.toggle("on",i===phase));
+  [...bar.children].forEach((s,i)=>s.firstChild.style.width=(done||i<k?100:i===k?100*u:0)+"%");
+  const cur=cards[Math.min(k,N-1)];
+  document.getElementById("now").innerHTML=done?"<b>✓</b>Two clicks for the person. Everything else happens on its own."
+    :`<b>${String(k+1).padStart(2,"0")}</b>${cur.t} · ${cur.s}`;
+  document.getElementById("count").textContent=done?`${N} / ${N}`:`${String(k+1).padStart(2,"0")} / ${N}`;
+};
+render(DURATION-1);
+if(location.hash==="#play"){const t0=performance.now();const loop=()=>{render(performance.now()-t0);requestAnimationFrame(loop)};loop();}
+</script>
+</body></html>
