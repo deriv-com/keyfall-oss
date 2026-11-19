@@ -166,7 +166,7 @@ def _is_loopback(host: str) -> bool:
 
 
 def redirect_uri_allowed(uri: str) -> bool:
-    """https (except blocked domains), http only back to this computer, or a listed app callback."""
+    """http(s) back to this computer, a listed app callback, or https to a listed website."""
     if uri in app_redirects():
         return True
     # One reading for every parser: no spaces, control or non-ASCII characters, backslashes,
@@ -187,10 +187,12 @@ def redirect_uri_allowed(uri: str) -> bool:
         return parts.scheme in ("http", "https")
     if parts.scheme != "https":
         return False
-    # Optional: only these websites may receive codes. Unset, any https site may, and the person
-    # deciding on the Allow page (which names the site) is the only check.
+    # Websites receive codes only when listed. /register is open, so anyone can name their own
+    # site as a callback and send a signed-in person a link; one click on Allow would hand them a
+    # code they can redeem (they chose the PKCE secret). "*" allows any https site, leaving the
+    # person reading the Allow page (which names the site) as the only check.
     web = _env_set("MCP_WEB_REDIRECT_DOMAINS")
-    return not web or any(host == d or host.endswith("." + d) for d in web)
+    return "*" in web or any(host == d or host.endswith("." + d) for d in web)
 
 
 # --- the two tokens ------------------------------------------------------------------------
@@ -386,7 +388,7 @@ def _identity_badge(rc: Dict[str, Any]) -> str:
     A metadata-document (CIMD) client_id proves who published the name, but not who is using it:
     any app on this laptop can start a sign-in with a well-known vendor's client_id and its own
     localhost listener. Only an https callback on the vendor's own domain ties the code to the
-    vendor, so only that gets "Verified".
+    vendor, so only that gets "Verified"; any other callback gets no badge.
     """
     e = html.escape
     if not rc.get("client_verified"):
@@ -396,8 +398,7 @@ def _identity_badge(rc: Dict[str, Any]) -> str:
     host = (p.hostname or "").lower()
     if p.scheme == "https" and vendor and (host == vendor or host.endswith("." + vendor)):
         return f"<span class=\"badge ok\">{_ICON['shield']}Verified by {e(vendor)}</span>"
-    return (f"<span class=\"badge warn\">{_ICON['info']}Published by {e(vendor)}; "
-            "an app on this computer can't be confirmed</span>")
+    return ""
 
 
 def _consent(user: Dict[str, Any], rc: Dict[str, Any], req: str, key: bytes, action: str) -> HTMLResponse:
@@ -415,7 +416,7 @@ def _consent(user: Dict[str, Any], rc: Dict[str, Any], req: str, key: bytes, act
         f"<div class=\"tile app\" title=\"{e(APP_NAME)}\">{_initial(APP_NAME)}</div></div>"
         f"<div class=\"eyebrow\">{e(APP_NAME)} · connect an agent</div>"
         f"<h1>Allow {e(agent)} to use {e(APP_NAME)} as you?</h1>"
-        f"<div class=\"who\">{badge}</div>"
+        + (f"<div class=\"who\">{badge}</div>" if badge else "") +
         "<dl>"
         f"<dt>Signed in as</dt><dd>{e(user['email'])}</dd>"
         f"<dt>Your role</dt><dd><span class=\"role\">{e(user['role'])}</span></dd>"

@@ -104,10 +104,11 @@ set `MCP_CIMD_ENABLED=false` so the server stops offering CIMD and every agent u
 
 Website callbacks: `/register` is open, so anyone can register an agent whose callback is their
 own website, then send a person a link to the Allow page. If that person clicks **Allow**, the
-code goes to that website, and its owner can redeem it (they chose the PKCE secret). The page
-says where the code goes, but that is the only check. Most agents return to `localhost` or an
-app callback, so set `MCP_WEB_REDIRECT_DOMAINS` to the websites you actually use (or to a domain
-nobody uses, such as `invalid`, to allow none); `localhost` and app callbacks are not affected.
+code goes to that website, and its owner can redeem it (they chose the PKCE secret). So websites
+receive codes only when their domain is listed in `MCP_WEB_REDIRECT_DOMAINS`, for example
+`cursor.com` (a domain covers its subdomains). Most agents return to `localhost` or an app
+callback, which need no listing. `*` allows any https site, leaving the Allow page (which names
+the site) as the only check; avoid it.
 
 Audit trail: `@audited` records each tool call's arguments (up to 2,000 characters per field).
 If a tool takes a secret or personal data as an argument, leave it out of the record.
@@ -137,7 +138,7 @@ If a tool takes a secret or personal data as an argument, leave it out of the re
 | `MCP_REDIS_PREFIX` | ✓ | ✓ (same value) | `keyfall:` |
 | `MCP_EXTRA_REDIRECTS` | ✓ | ✓ (same value) | none (Cursor's app callback is built in) |
 | `MCP_BLOCKED_REDIRECT_DOMAINS` | ✓ | ✓ (same value) | none |
-| `MCP_WEB_REDIRECT_DOMAINS` | ✓ | ✓ (same value) | any https site (see "Website callbacks") |
+| `MCP_WEB_REDIRECT_DOMAINS` | ✓ | ✓ (same value) | none: no websites (`*` = any https site; see "Website callbacks") |
 | `MCP_ISSUER_URL` | ✓ | | `https://mcp.example.com` |
 | `MCP_ALLOW_PAGE_URL` | ✓ | | `https://portal.example.com/connect-agent/authorize` |
 | `MCP_SCOPE` | ✓ | | `mcp` |

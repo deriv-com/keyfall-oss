@@ -125,7 +125,8 @@ def test_revoked_person_gets_no_button_and_revoke_check_fails_closed(world, monk
     assert page.status_code == 503 and "Allow</button>" not in page.text
 
 
-def test_web_callback_gets_a_navigation_hand_off(world):
+def test_web_callback_gets_a_navigation_hand_off(world, monkeypatch):
+    monkeypatch.setenv("MCP_WEB_REDIRECT_DOMAINS", "agent.example.com")
     redirect = "https://agent.example.com/oauth/callback"
     r = world.decide(note(world, redirect))
     assert r.status_code == 200 and 'http-equiv="refresh"' in r.text

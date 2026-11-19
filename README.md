@@ -23,7 +23,7 @@ You need Docker (or Podman) and an MCP client such as Claude Code. No SSO is nee
 uses a pretend login for `alice@example.com`.
 
 ```bash
-git clone https://github.com/deriv-com/keyfall && cd keyfall/demo
+git clone https://github.com/deriv-com/keyfall-oss && cd keyfall-oss/demo
 docker compose up --build
 ```
 
@@ -92,8 +92,9 @@ with versioned releases.
 - A rotated refresh token that comes back after a 30-second grace window ends the whole grant,
   so a stolen chain dies as soon as the real agent refreshes.
 - The Allow page shows nothing to click unless every check passes, including the revoke list.
-- By default a code may go to any https website the agent registers; set
-  `MCP_WEB_REDIRECT_DOMAINS` to the ones you use ([setup](docs/setup.md#4-the-mcp-server)).
+- A code only goes back to the person's own computer, a listed app or a website listed in
+  `MCP_WEB_REDIRECT_DOMAINS`, so nobody can register their own site and phish an Allow click
+  ([setup](docs/setup.md#4-the-mcp-server)).
 
 Read [docs/how-it-works.md](docs/how-it-works.md#what-protects-what) for what each piece defends
 against, [docs/security-audit.md](docs/security-audit.md) for the pre-release security review, and

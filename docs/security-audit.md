@@ -1,13 +1,13 @@
 # Security audit (pre-release)
 
-A review of Keyfall before it is published as `deriv-com/keyfall`. It covers the code and the
+A review of Keyfall before it is published as `deriv-com/keyfall-oss`. It covers the code and the
 security claims in the docs, at commit `e0c0d94`. Fixes are in the commits that follow it. Each
 code fix comes with a test that fails without it; the dependency, CI and docs changes have no
 test. The security team's own review comes after this one.
 
-**Result:** no Critical or High findings. 4 Medium, 15 Low, 11 Informational. 23 are fixed,
-6 are accepted with a reason, and 1 Medium is fixed only as an opt-in setting. Its default
-needs a decision (see [Decisions needed](#decisions-needed)).
+**Result:** no Critical or High findings. 4 Medium, 15 Low, 11 Informational. 24 are fixed
+and 6 are accepted with a reason. KF-03 was first fixed as an opt-in setting; after review its
+default was made strict (see [Decisions needed](#decisions-needed)).
 
 ## Scope
 
@@ -68,15 +68,14 @@ bearer-token middleware.
 
 ## Findings
 
-Line numbers refer to commit `e0c0d94`. Status: **Fixed** (in code, with a test), **Opt-in**
-(fixed behind a setting whose default is unchanged), **Accepted** (documented, with the reason)
-or **False positive**.
+Line numbers refer to commit `e0c0d94`. Status: **Fixed** (in code, with a test), **Accepted**
+(documented, with the reason) or **False positive**.
 
 | ID | Severity | Where | Finding | Status |
 |---|---|---|---|---|
 | KF-01 | Medium | `mcp_server_auth.py:511`, `:611` | **A refresh in flight could revive a grant that had just been ended.** Reuse detection, an agent's own revoke and an admin revoke all end a grant. A refresh that was mid-flight at that moment re-created the grant with `HSET`, with no expiry and no `subject`, so the chain lived on. It also wrote an access token that nothing deleted, and `load_access_token` never checked the grant. Against the demo, a thief refreshing in a loop kept the chain in 1 of 12 races. | Fixed. `_issue` WATCHes the grant and writes nothing if it is gone. Every lookup (access, refresh, grace) requires a live grant. Demo after the fix: 0 of 24 races. |
 | KF-02 | Medium | `mcp_server_auth.py:681` (the SDK's `/authorize` handler) | **The public MCP host was an open redirector.** The SDK sends `/authorize` errors to the client's `redirect_uri`, and DCR lets anyone register an https one. A link to the MCP host therefore landed on any website, with no click and no sign-in (RFC 9700 §4.11.2). Shown with a missing `response_type`, a bad `scope` and a refused `resource`. | Fixed. A route placed ahead of the SDK's answers errors for website callbacks with a 400. Loopback and app callbacks still get their error redirect. |
-| KF-03 | Medium | `mcp_server_auth.py:167`, `allow_page.py:164`, `docs/how-it-works.md:154` | **Consent phishing through open DCR.** Anyone can register an agent whose callback is their own website, then send a signed-in person a link to the Allow page. One click on **Allow** sends a code to that site, and its owner can redeem it, because they chose the PKCE secret. The page names the destination and marks the name as self-declared, but nothing else stops it. The docs called the callback rules an "allowlist". | Opt-in. `MCP_WEB_REDIRECT_DOMAINS` limits website callbacks to listed domains. The docs now describe the real rule and this case. The default (any https site) [needs a decision](#decisions-needed). |
+| KF-03 | Medium | `mcp_server_auth.py:167`, `allow_page.py:164`, `docs/how-it-works.md:154` | **Consent phishing through open DCR.** Anyone can register an agent whose callback is their own website, then send a signed-in person a link to the Allow page. One click on **Allow** sends a code to that site, and its owner can redeem it, because they chose the PKCE secret. The page names the destination and marks the name as self-declared, but nothing else stops it. The docs called the callback rules an "allowlist". | Fixed. Websites receive codes only when listed in `MCP_WEB_REDIRECT_DOMAINS` (default none; `*` allows any https site). The docs now describe the real rule and this case. |
 | KF-04 | Medium | `requirements.txt:2-8` | **Dependency floors allowed versions with published advisories.** These include PyJWT below 2.15 (an algorithm allow-list bypass, unbounded JWKS refetch via `kid`, JWKS redirects), Starlette below 1.3.1 (`request.url` built from an unchecked Host header, which the fake login reads), python-multipart below 0.0.31 and h11 below 0.16 (DoS, request smuggling), and cryptography below 49. The pinned resolution was clean. | Fixed. Floors raised; Starlette and h11 named explicitly. |
 | KF-05 | Low | `mcp_server_auth.py:273` | **The CIMD download had no overall deadline.** httpx's 5-second timeout applies to each read, so a server sending a byte every few seconds could hold a fetch, and the `/authorize` request waiting on it, for hours. | Fixed. One 5-second deadline covers DNS, connect and the whole body. |
 | KF-06 | Low | `mcp_server_auth.py:278` | **The 10 KB cap counted decompressed bytes.** `aiter_bytes()` inflates gzip before the size check runs, so one network chunk could expand to megabytes in memory first. | Fixed. The download asks for `identity`, refuses any `Content-Encoding` and reads raw bytes. |
@@ -207,13 +206,11 @@ Neither run reported a Medium or High issue.
 
 ## Decisions needed
 
-1. **The default for `MCP_WEB_REDIRECT_DOMAINS` (KF-03).**
-   - Today any https site may receive a code, and only the person reading the Allow page stands
-     in the way.
-   - Most agents return to `localhost` or an app callback, so a stricter default (no websites
-     unless listed) would close consent phishing for most adopters. It would break agents that
-     use web callbacks until someone lists them.
-   - A related question: should production setups keep open DCR at all, or rely on CIMD with
+1. **The default for `MCP_WEB_REDIRECT_DOMAINS` (KF-03). Decided: no websites unless listed.**
+   - Websites now receive codes only when their domain is listed; `*` allows any https site.
+   - Agents returning to `localhost` or an app callback are not affected. Agents with a web
+     callback fail at `/register` until someone lists their domain.
+   - Still open: should production setups keep open DCR at all, or rely on CIMD with
      `MCP_CIMD_TRUSTED_HOSTS`?
 2. **Reporting KF-02 upstream.** The open redirect comes from the MCP Python SDK's
    `/authorize` error handling, which every SDK-based server inherits. The MCP spec's security considerations say an

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
 import pytest
 
@@ -24,15 +25,27 @@ def test_full_sign_in_without_register_and_any_loopback_port(cimd_world):
     assert not cimd_world.r.keys("t:client:*")      # nothing was registered
 
 
+def test_agents_may_ask_for_the_advertised_scope(cimd_world):
+    """Claude Code's document lists no scope, then its /authorize asks for scope=mcp."""
+    cimd_world.docs[AGENT] = doc(redirect_uris=["http://localhost/callback", "http://127.0.0.1/callback"])
+    r = cimd_world.mcp.get("/authorize", params={
+        "response_type": "code", "client_id": AGENT, "redirect_uri": "http://localhost:63138/callback",
+        "code_challenge": pkce()[1], "code_challenge_method": "S256", "state": "s",
+        "scope": msa.SCOPE, "resource": msa.RESOURCE_URL})
+    assert r.status_code == 302, r.text
+    assert r.headers["location"].startswith(os.environ["MCP_ALLOW_PAGE_URL"] + "?"), r.headers["location"]
+
+
 def test_loopback_callback_is_never_shown_as_verified(cimd_world):
-    """Any local app can reuse a vendor's client_id with its own listener: say so, don't verify."""
+    """Any local app can reuse a vendor's client_id with its own listener: no badge at all."""
     cimd_world.docs[AGENT] = doc()
     page = cimd_world.allow_page(cimd_world.authorize(AGENT, pkce()[1], "http://127.0.0.1:5000/callback"))
-    assert "Verified by" not in page.text
-    assert "Published by agent.example.com" in page.text and "Example Agent" in page.text
+    assert "Example Agent" in page.text
+    assert 'class="badge' not in page.text
 
 
-def test_https_callback_on_the_vendor_domain_is_verified(cimd_world):
+def test_https_callback_on_the_vendor_domain_is_verified(cimd_world, monkeypatch):
+    monkeypatch.setenv("MCP_WEB_REDIRECT_DOMAINS", "agent.example.com,elsewhere.example.org")
     cimd_world.docs[AGENT] = doc(redirect_uris=["https://app.agent.example.com/oauth/callback",
                                                 "https://elsewhere.example.org/cb"])
     page = cimd_world.allow_page(cimd_world.authorize(AGENT, pkce()[1], "https://app.agent.example.com/oauth/callback"))

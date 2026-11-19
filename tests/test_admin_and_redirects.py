@@ -43,7 +43,7 @@ TABLE = [
     ("http://127.0.0.1:5555/callback", True),
     ("http://localhost:33418/callback", True),
     ("http://[::1]:8000/cb", True),
-    ("https://agent.example.com/oauth/callback", True),
+    ("https://agent.example.com/oauth/callback", False),    # websites only when listed
     ("cursor://anysphere.cursor-mcp/oauth/callback", True),
     ("http://evil.example.com/cb", False),
     ("https://agent.example.com/cb#x", False),
@@ -70,6 +70,7 @@ def test_both_allowlist_copies_agree(uri, ok):
 
 
 def test_blocked_domains_and_extra_app_callbacks(monkeypatch):
+    monkeypatch.setenv("MCP_WEB_REDIRECT_DOMAINS", "*")              # blocked wins even over "any site"
     monkeypatch.setenv("MCP_BLOCKED_REDIRECT_DOMAINS", "example.com")
     monkeypatch.setenv("MCP_EXTRA_REDIRECTS", "myagent://cb")
     for f in (msa.redirect_uri_allowed, allow_page.redirect_uri_allowed):
@@ -108,8 +109,21 @@ def test_cli_prints_escapes_not_terminal_controls(world, monkeypatch, capsys):
     assert "\x1b" not in out and "‮" not in out and "\\x1b[1A" in out and "\\u202e" in out
 
 
+def test_websites_are_refused_unless_listed(monkeypatch):
+    """Open DCR lets anyone name an https callback, so websites get codes only when listed (KF-03)."""
+    monkeypatch.delenv("MCP_WEB_REDIRECT_DOMAINS", raising=False)
+    for f in (msa.redirect_uri_allowed, allow_page.redirect_uri_allowed):
+        assert f("https://agent.example.com/oauth/callback") is False
+        assert f("http://localhost:33418/callback") is True
+        assert f("https://127.0.0.1:5555/callback") is True
+        assert f("cursor://anysphere.cursor-mcp/oauth/callback") is True
+    monkeypatch.setenv("MCP_WEB_REDIRECT_DOMAINS", "*")
+    for f in (msa.redirect_uri_allowed, allow_page.redirect_uri_allowed):
+        assert f("https://phish.example.net/cb") is True
+        assert f("http://phish.example.net/cb") is False
+
+
 def test_web_callbacks_can_be_limited_to_listed_domains(monkeypatch):
-    """Open DCR lets anyone name an https callback; MCP_WEB_REDIRECT_DOMAINS narrows it to known sites."""
     monkeypatch.setenv("MCP_WEB_REDIRECT_DOMAINS", "agent.example.com")
     for f in (msa.redirect_uri_allowed, allow_page.redirect_uri_allowed):
         assert f("https://app.agent.example.com/oauth/callback") is True

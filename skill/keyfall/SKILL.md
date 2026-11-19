@@ -38,8 +38,9 @@ The reference code lives in this repo; adapt it rather than writing the flow fro
 3. Copy `mcp_server_auth.py`; register tools with `@mcp.tool(...)` + `@audited(redis)`; read the
    person with `caller()`; redact for lower roles on the server.
 4. Mount `allow_page.router` in an app behind the SSO; edit `ROLE_CAN` / `CANNOT` text.
-5. Same `MCP_SIGNING_KEY`, `REDIS_URL`, `MCP_REDIS_PREFIX`, `MCP_EXTRA_REDIRECTS` and
-   `MCP_BLOCKED_REDIRECT_DOMAINS` on both hosts. One worker per replica for the MCP server.
+5. Same `MCP_SIGNING_KEY`, `REDIS_URL`, `MCP_REDIS_PREFIX`, `MCP_EXTRA_REDIRECTS`,
+   `MCP_BLOCKED_REDIRECT_DOMAINS` and `MCP_WEB_REDIRECT_DOMAINS` (websites allowed to receive
+   codes; none by default) on both hosts. One worker per replica for the MCP server.
 6. Run `pytest -q`, then the curl checks in `docs/troubleshooting.md`.
 
 ## Rules that are easy to break

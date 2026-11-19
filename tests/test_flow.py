@@ -118,9 +118,16 @@ def test_redis_holds_only_token_hashes(world):
     assert tok["access_token"] not in dump and tok["refresh_token"] not in dump
 
 
-def test_authorize_errors_never_bounce_to_a_website(world):
-    """Anyone can register an https callback, so /authorize errors must not redirect there
-    (an open redirect on the public host, RFC 9700 4.11.2). Agents on this computer still get theirs."""
+def test_websites_cannot_register_by_default(world):
+    r = world.register("https://phish.example.net/login")
+    assert r.status_code == 400 and r.json()["error"] == "invalid_redirect_uri"
+
+
+def test_authorize_errors_never_bounce_to_a_website(world, monkeypatch):
+    """With websites allowed, anyone can register an https callback, so /authorize errors must not
+    redirect there (an open redirect on the public host, RFC 9700 4.11.2). Agents on this computer
+    still get theirs."""
+    monkeypatch.setenv("MCP_WEB_REDIRECT_DOMAINS", "*")
     evil = "https://phish.example.net/login"
     cid = world.register(evil).json()["client_id"]
     good = {"response_type": "code", "client_id": cid, "redirect_uri": evil, "code_challenge": pkce()[1], "state": "s"}

@@ -54,9 +54,8 @@ Claude Code, on Alex's laptop), **the MCP server**, **the SSO** and **the Allow 
      listener.
    - **DCR** (Dynamic Client Registration, the older way most agents still use):
      `POST /register` with its name and callback address → a `client_id`, kept 90 days.
-   Either way the callback address must pass the callback rules: https, http to this computer
-   only, or a listed app callback. Any https site passes unless `MCP_WEB_REDIRECT_DOMAINS`
-   lists the sites allowed.
+   Either way the callback address must pass the callback rules: this computer (`localhost`),
+   a listed app callback, or a website listed in `MCP_WEB_REDIRECT_DOMAINS`.
 
 ### 3. The agent prepares (on Alex's laptop)
 1. Makes a random **secret** (PKCE `code_verifier`) and keeps it in memory.
@@ -153,12 +152,12 @@ no secret, and SHA-256 can't be reversed to find it.
 |---|---|
 | API key copied from a laptop, repo or backup | there is none; nothing long-lived is stored on the laptop |
 | Code stolen from a URL, history or log | PKCE: the code is useless without the secret |
-| Agent tricked into sending the code elsewhere | callback rules (https, http only to this computer, or a listed app callback), checked at registration, `/authorize` and on the Allow page, with one reading for every URL parser (no `\`, `user@`, `%` in the host or control characters); the code is bound to the callback |
-| A link to the Allow page for someone else's agent (consent phishing) | the page names where the code goes and whether the agent's name is verified; Allow can't be hit by a stray Enter or in the first 0.7 s; `MCP_WEB_REDIRECT_DOMAINS` limits which websites may receive codes (any https site by default) |
+| Agent tricked into sending the code elsewhere | callback rules (this computer, a listed app callback or a listed website), checked at registration, `/authorize` and on the Allow page, with one reading for every URL parser (no `\`, `user@`, `%` in the host or control characters); the code is bound to the callback |
+| A link to the Allow page for someone else's agent (consent phishing) | the page names where the code goes and whether the agent's name is verified; Allow can't be hit by a stray Enter or in the first 0.7 s; a website receives codes only when listed in `MCP_WEB_REDIRECT_DOMAINS`, so a stranger's own site never gets one |
 | The public host used as an open redirector | `/authorize` errors for a website callback are answered on the MCP host, never redirected |
 | An agent using several servers sends a code to the wrong one (mix-up) | every authorization response carries `iss` (RFC 9207), advertised in the metadata, so the agent can check which server answered |
 | Someone tampers with the request in the browser | the signed note: changing the callback or hash breaks the signature |
-| A local app pretending to be a well-known agent | "Verified" only for https callbacks on the vendor's own domain; otherwise the page says the app can't be confirmed, and "Only allow an agent you started yourself, just now" |
+| A local app pretending to be a well-known agent | "Verified" only for https callbacks on the vendor's own domain; otherwise no badge, and "Only allow an agent you started yourself, just now" |
 | Using the server to fetch internal URLs (CIMD) | https on port 443 only, printable ASCII URLs, no IP literals, every resolved address must be public (also an IPv4 address inside IPv6, such as NAT64) and the connection goes to that checked address (no DNS rebinding), no redirects, no compressed bodies, 10 KB cap, 5 s for the whole download; `MCP_CIMD_TRUSTED_HOSTS` to allow only known vendors |
 | Dodging the blocked-domain list (`example.com.`) | host names are compared without the trailing dot; metadata URLs ending in a dot are refused |
 | Clickjacking the Allow button | `frame-ancestors 'none'`, `X-Frame-Options: DENY`; the buttons ignore clicks for 0.7 s (double-click hijacking) and none has focus on load |
@@ -175,5 +174,5 @@ no secret, and SHA-256 can't be reversed to find it.
 What it does **not** protect against: malware on the person's laptop that reads the agent's
 memory or token store, a compromised SSO account, or a malicious agent the person chooses to
 allow, including one that arrives as a link they didn't start. The Allow page's "Only allow an
-agent you started yourself, just now" line is there for the last one, and
-`MCP_WEB_REDIRECT_DOMAINS` narrows it. The full review is in [security-audit.md](security-audit.md).
+agent you started yourself, just now" line is there for the last one; and because websites must
+be listed, a stranger's link can only send the code back to the person's own computer. The full review is in [security-audit.md](security-audit.md).

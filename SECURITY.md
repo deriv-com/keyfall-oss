@@ -7,7 +7,7 @@ This repo is reference code for authentication, so we take reports seriously.
 Please **do not open a public issue**. Report privately:
 
 1. **GitHub private security advisory** (preferred):
-   [Report a vulnerability](https://github.com/deriv-com/keyfall/security/advisories/new) on `deriv-com/keyfall`.
+   [Report a vulnerability](https://github.com/deriv-com/keyfall-oss/security/advisories/new) on `deriv-com/keyfall-oss`.
 2. **Email**: [security@deriv.com](mailto:security@deriv.com), naming the repository and the affected file.
 
 Include what you found, how to reproduce it, and the impact you expect.
@@ -31,6 +31,7 @@ infrastructure (TLS, Redis access, secret storage).
 - Keep `MCP_SIGNING_KEY` in a secret manager; anyone with it can mint approval codes.
 - Run Redis with a password, TLS across networks and `maxmemory-policy noeviction`, and
   rate-limit the public `/register`, `/authorize` and `/token` endpoints at your proxy.
-- Set `MCP_WEB_REDIRECT_DOMAINS` (and `MCP_CIMD_TRUSTED_HOSTS`) to what your agents use.
+- List in `MCP_WEB_REDIRECT_DOMAINS` only the websites your agents return to (avoid `*`), and set
+  `MCP_CIMD_TRUSTED_HOSTS` to the vendors you use.
 - [docs/security-audit.md](docs/security-audit.md) lists what was reviewed before release and
   what was accepted.

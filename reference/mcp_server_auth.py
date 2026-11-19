@@ -29,7 +29,7 @@ Environment
     MCP_REDIS_PREFIX           key prefix shared with the Allow page (default "keyfall:")
     MCP_EXTRA_REDIRECTS        comma-separated extra app callbacks (same value on both hosts)
     MCP_BLOCKED_REDIRECT_DOMAINS  comma-separated domains an approval may never return to
-    MCP_WEB_REDIRECT_DOMAINS   optional: the only websites an approval may return to
+    MCP_WEB_REDIRECT_DOMAINS   websites an approval may return to (default none; "*" for any)
     MCP_REFRESH_GRACE_SECONDS  concurrent-refresh grace window (default 30, max 120)
     MCP_REFRESH_REUSE_ACTION   "end_grant" (default) or "log" when an old refresh token comes back
     MCP_CIMD_ENABLED           accept Client ID Metadata Documents (default true)
@@ -183,7 +183,7 @@ def _is_loopback(host: str) -> bool:
 
 
 def redirect_uri_allowed(uri: str) -> bool:
-    """https (except blocked domains), http only back to this computer, or a listed app callback."""
+    """http(s) back to this computer, a listed app callback, or https to a listed website."""
     if uri in app_redirects():
         return True
     # One reading for every parser: no spaces, control or non-ASCII characters, backslashes,
@@ -204,10 +204,12 @@ def redirect_uri_allowed(uri: str) -> bool:
         return parts.scheme in ("http", "https")
     if parts.scheme != "https":
         return False
-    # Optional: only these websites may receive codes. Unset, any https site may, and the person
-    # deciding on the Allow page (which names the site) is the only check.
+    # Websites receive codes only when listed. /register is open, so anyone can name their own
+    # site as a callback and send a signed-in person a link; one click on Allow would hand them a
+    # code they can redeem (they chose the PKCE secret). "*" allows any https site, leaving the
+    # person reading the Allow page (which names the site) as the only check.
     web = _env_set("MCP_WEB_REDIRECT_DOMAINS")
-    return not web or any(host == d or host.endswith("." + d) for d in web)
+    return "*" in web or any(host == d or host.endswith("." + d) for d in web)
 
 
 # --- Client ID Metadata Documents (CIMD) ---------------------------------------------------
@@ -375,6 +377,9 @@ def client_from_document(url: str, doc: Any) -> CimdClient:
         token_endpoint_auth_method="none",
         grant_types=["authorization_code", "refresh_token"],
         response_types=["code"],
+        # Documents rarely list a scope (Claude Code's doesn't), yet agents ask for the one this
+        # server advertises; without it the SDK refuses them. Registered clients get it by default.
+        scope=SCOPE,
     )
     # Check again as stored: parsing normalizes URLs (a backslash becomes a slash, so what Python
     # read as a loopback address can be another host to a browser).
@@ -467,7 +472,8 @@ class AllowPageOAuthProvider:
         if any(not redirect_uri_allowed(u) for u in uris):
             raise RegistrationError(
                 "invalid_redirect_uri",
-                "redirect_uri must be https, http to localhost, or a supported app callback",
+                "redirect_uri must be http(s) to localhost, a supported app callback, "
+                "or https to a website the server admin has allowed",
             )
         record = client_info.model_dump_json()
         if len(record) > MAX_CLIENT_RECORD_BYTES:
