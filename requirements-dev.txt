@@ -1,3 +1,7 @@
 -r requirements.txt
 pytest>=8
 fakeredis>=2.23
+
+# redis-py 8.2 breaks fakeredis 2.40 (AttributeError in fakeredis/_clients/_setup.py).
+# Tests only; lift once fakeredis supports it.
+redis<8.2

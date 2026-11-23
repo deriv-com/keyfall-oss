@@ -69,6 +69,15 @@ def test_default_role_for_setups_without_groups(world, monkeypatch):
     assert page.status_code == 200 and "full record bodies stay hidden" in page.text
 
 
+def test_admin_is_never_a_default_role(world, monkeypatch, caplog):
+    monkeypatch.setenv("FAKE_LOGIN_GROUPS", "")
+    monkeypatch.setenv("MCP_DEFAULT_ROLE", "admin")
+    page = world.allow_page(note(world))
+    assert page.status_code == 403 and "not in a group" in page.text
+    allow_page.check_default_role()
+    assert "is ignored" in caplog.text
+
+
 def test_highest_role_wins(world, monkeypatch):
     monkeypatch.setenv("FAKE_LOGIN_GROUPS", "mcp-readonly,MCP-Admin")
     assert ">admin<" in world.allow_page(note(world)).text

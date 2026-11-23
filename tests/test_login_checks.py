@@ -114,3 +114,24 @@ def test_unknown_or_missing_setup_refuses_everyone(monkeypatch):
     assert signed_in_person(request(host="localhost")) is None
     monkeypatch.setenv("LOGIN_CHECK", "something_else")
     assert signed_in_person(request(host="localhost")) is None
+
+
+def test_oauth2_proxy_discovers_the_jwks_url_once(monkeypatch):
+    """The Allow page runs in a thread pool: concurrent first requests fetch discovery once."""
+    import threading
+    calls = []
+
+    def fake_get(url, timeout):
+        calls.append(url)
+        time.sleep(0.05)
+        return SimpleNamespace(json=lambda: {"jwks_uri": "https://login.example.com/keys"})
+
+    monkeypatch.delenv("OIDC_JWKS_URL", raising=False)
+    monkeypatch.setattr(oauth2_proxy, "_jwks_urls", {})
+    monkeypatch.setattr(oauth2_proxy.httpx, "get", fake_get)
+    threads = [threading.Thread(target=oauth2_proxy._jwks_url, args=("https://login.example.com",)) for _ in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(calls) == 1

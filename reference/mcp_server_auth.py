@@ -763,13 +763,28 @@ def caller() -> dict:
     }
 
 
-def audited(redis) -> Callable:
+# Tool arguments whose names look like secrets are written to the audit trail as "***".
+SECRET_ARG = re.compile(r"(^|_)(password|passwd|passphrase|secret|token|api_?key|key|credentials?|"
+                        r"authorization|cookie|session)($|_)", re.IGNORECASE)
+
+
+def audit_args(kwargs: dict, redact: frozenset = frozenset()) -> str:
+    return json.dumps({k: "***" if k in redact or SECRET_ARG.search(k) else v for k, v in kwargs.items()},
+                      default=str)
+
+
+def audited(redis, redact: tuple = ()) -> Callable:
     """Decorator: write one tool_call event per call (who, tool, args, outcome, duration).
 
         @mcp.tool()
-        @audited(redis)
+        @audited(redis)                        # or @audited(redis, redact=("ssn",))
         async def my_tool(...): ...
+
+    Arguments named like secrets (password, token, api_key, ...) and those listed in redact are
+    recorded as "***". Other arguments are recorded as given, up to 2,000 characters.
     """
+    hidden = frozenset(redact)
+
     def wrap(fn: Callable) -> Callable:
         @functools.wraps(fn)
         async def tool(*args: Any, **kwargs: Any) -> Any:
@@ -782,7 +797,7 @@ def audited(redis) -> Callable:
             finally:
                 await record_event(redis, "tool_call", who["email"], role=who["role"],
                                    client_id=who["client_id"], tool=fn.__name__,
-                                   args=json.dumps(kwargs, default=str), status=status,
+                                   args=audit_args(kwargs, hidden), status=status,
                                    ms=int((time.monotonic() - start) * 1000))
         return tool
     return wrap
@@ -793,6 +808,20 @@ def audited(redis) -> Callable:
 def redis_client() -> aioredis.Redis:
     return aioredis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True,
                              socket_timeout=5, socket_connect_timeout=5)
+
+
+def check_settings() -> None:
+    """Startup warnings for settings that work but are probably not what was meant."""
+    if REFRESH_REUSE_ACTION not in ("end_grant", "log"):
+        logger.warning("MCP_REFRESH_REUSE_ACTION=%r is not end_grant or log: using end_grant", REFRESH_REUSE_ACTION)
+    url = urlsplit(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+    host = (url.hostname or "").lower()
+    if url.scheme in ("redis", "rediss") and not _is_loopback(host):
+        missing = [m for m, ok in (("TLS (rediss://)", url.scheme == "rediss"), ("password", url.password))
+                   if not ok]
+        if missing:
+            logger.warning("REDIS_URL to %s has no %s: anyone who reaches Redis can read the audit "
+                           "trail and delete revoke flags", host, " and no ".join(missing))
 
 
 async def check_eviction_policy(redis) -> None:
@@ -905,6 +934,7 @@ def build_mcp(register_tools: Callable[[MCPServer, Any], None], redis=None, *, n
 
     @asynccontextmanager
     async def lifespan(a):
+        check_settings()
         await check_eviction_policy(redis)
         async with session_lifespan(a) as state:
             yield state

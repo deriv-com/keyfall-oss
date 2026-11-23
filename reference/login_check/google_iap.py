@@ -3,8 +3,10 @@
 IAP signs every request with a JWT in the x-goog-iap-jwt-assertion header.
 
 IAP's token carries the email but NOT group membership. Either give everyone who gets past IAP
-one role with MCP_DEFAULT_ROLE (IAP's own access policy decides who gets in), or look the
-person's groups up in your directory here.
+one role with MCP_DEFAULT_ROLE (readonly or user, never admin; IAP's own access policy then
+decides who gets in, so keep it to the people who should have that role), or look the person's
+groups up here, for example with the Cloud Identity groups API
+(groups.memberships.searchTransitiveGroups), and return them in Person.groups.
 
     IAP_AUDIENCE   /projects/<number>/global/backendServices/<id>   (load balancer)
                    or /projects/<number>/apps/<project-id>          (App Engine)

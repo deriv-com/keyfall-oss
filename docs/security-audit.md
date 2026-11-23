@@ -229,6 +229,25 @@ The security team reviewed commit `d05310f` and raised two Low findings.
 | VULN-001 | `oauth2_proxy` accepted a token with no `email_verified` claim (it refused only an explicit `false`, the same rule oauth2-proxy itself uses). | Fixed. The claim must be `true` (or `"true"`). `OIDC_ALLOW_MISSING_EMAIL_VERIFIED=true` accepts a missing claim for providers that don't send it; an explicit `false` is always refused. |
 | VULN-002 | Revoke flags have no TTL and could be evicted under memory pressure. | Fixed with a startup check: the MCP server reads Redis's `maxmemory-policy` and refuses to start on `allkeys-*`. A `volatile-*` policy starts with a warning (revoke flags are safe there, but sessions and the used-code markers have TTLs and can be evicted), and so does a Redis that won't report its policy. No TTL was added: under a `volatile-*` policy Redis evicts only keys that have one, so a TTL would make the flag evictable, and revoke would end on its own after the TTL. Revoke also deletes the person's grants and tokens at once, and every token needs a live grant, so an evicted flag could not revive an existing session; it could only let the person click Allow again. |
 
+## Security team review, round 2
+
+A wider review of commit `0709672` raised 12 findings (3 Medium, 7 Low, 2 Informational).
+
+| ID | Finding | Outcome |
+|---|---|---|
+| NP-001 | The demo compose file had a built-in signing key; anyone who read it could sign codes for a demo started without one. | Fixed. The compose file has no key and refuses to start without one; the demo steps create a random key in `demo/.env`. |
+| NP-002 | `MCP_DEFAULT_ROLE` gives a role to everyone the SSO proxy lets in. | Fixed. `admin` is never a default role (ignored, with an error in the log); `readonly` or `user` log a warning at startup. The docs say the SSO proxy's policy then decides who gets the role. |
+| NP-003 | An unknown `MCP_REFRESH_REUSE_ACTION` was not reported. | Fixed. Startup warns. (Reuse was not invisible before: ending a grant records `grant_ended` with `reason=refresh_token_reuse`.) |
+| NP-004 | With `MCP_WEB_REDIRECT_DOMAINS=*`, no extra warning on the Allow page. | Not changed. The default allows no websites, `*` is documented as a last resort, and the page already names the website the code goes to. |
+| NP-005 | Redis without TLS or a password is not flagged. | Fixed. Startup warns when `REDIS_URL` points beyond this machine without `rediss://` or a password. The demo's Redis is not published outside the Compose network. |
+| NP-006 | The first concurrent oauth2-proxy requests could each fetch OIDC discovery. | Fixed. A lock makes it one fetch. No security effect. |
+| NP-007 | Google IAP sends no groups, so it relies on `MCP_DEFAULT_ROLE`. | Same fix as NP-002, plus a pointer in `google_iap.py` to looking groups up with the Cloud Identity groups API. |
+| NP-008 | `@audited` records tool arguments as given. | Fixed. Arguments named like secrets are recorded as `***`, and `redact=` lists others. |
+| NP-009 | Several workers break MCP sessions; nothing enforces one worker. | Documented in the README. The app can't reliably detect its worker count, and this is a reliability limit, not a security one. |
+| NP-010 | The two copies of the redirect checks could drift apart. | Already covered: `test_the_two_copies_are_identical` compares the source of every shared function, and `test_the_two_copies_share_their_constants` the constants. Changing one copy fails CI. |
+| NP-011 | The Cloudflare Access check also reads the `CF_Authorization` cookie. | Not changed. The cookie gets the same signature, issuer and audience checks as the header, and anyone reaching the origin directly can set the header as easily as the cookie. |
+| NP-012 | No rate limiting in the code. | Not changed. Accepted before (KF-10, KF-26): rate limits belong to the proxy, as the setup guide says. |
+
 ## Not covered
 
 - **Real SSO proxies, end to end.** Cloudflare Access, Google IAP, Pomerium and oauth2-proxy were

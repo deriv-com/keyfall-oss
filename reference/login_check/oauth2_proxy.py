@@ -16,6 +16,7 @@ not signed, and anyone who reaches the app directly can set them.
 from __future__ import annotations
 
 import os
+import threading
 from typing import Optional
 
 import httpx
@@ -24,16 +25,18 @@ from . import Person
 from ._jwt import groups_from, verify
 
 _jwks_urls: dict[str, str] = {}
+_jwks_lock = threading.Lock()       # the Allow page runs in a thread pool: discover once
 
 
 def _jwks_url(issuer: str) -> str:
     url = os.environ.get("OIDC_JWKS_URL", "").strip()
     if url:
         return url
-    if issuer not in _jwks_urls:
-        conf = httpx.get(f"{issuer}/.well-known/openid-configuration", timeout=5).json()
-        _jwks_urls[issuer] = conf["jwks_uri"]
-    return _jwks_urls[issuer]
+    with _jwks_lock:
+        if issuer not in _jwks_urls:
+            conf = httpx.get(f"{issuer}/.well-known/openid-configuration", timeout=5).json()
+            _jwks_urls[issuer] = conf["jwks_uri"]
+        return _jwks_urls[issuer]
 
 
 def person(request) -> Optional[Person]:

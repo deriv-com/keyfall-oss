@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 
 import pytest
 import redis
@@ -174,3 +175,27 @@ def test_revoke_flag_never_expires(world, monkeypatch):
     monkeypatch.setattr(admin, "AUDIT_STREAM", "t:audit")
     admin.revoke(world.r, "alice@example.com", by="admin@example.com")
     assert world.r.ttl("t:revoked:alice@example.com") == -1
+
+
+@pytest.mark.parametrize("url,warned", [
+    ("redis://10.0.0.5:6379/0", True), ("rediss://10.0.0.5:6379/0", True), ("redis://:pw@10.0.0.5:6379/0", True),
+    ("rediss://:pw@10.0.0.5:6379/0", False), ("redis://localhost:6379/0", False), ("redis://127.0.0.1/0", False)])
+def test_startup_warns_about_unencrypted_or_open_redis(url, warned, monkeypatch, caplog):
+    monkeypatch.setenv("REDIS_URL", url)
+    with TestClient(create_app(PolicyRedis("noeviction"))):
+        pass
+    assert ("REDIS_URL to" in caplog.text) == warned
+
+
+def test_startup_warns_about_an_unknown_reuse_action(monkeypatch, caplog):
+    monkeypatch.setattr(msa, "REFRESH_REUSE_ACTION", "end-grant")
+    with TestClient(create_app(PolicyRedis("noeviction"))):
+        pass
+    assert "MCP_REFRESH_REUSE_ACTION='end-grant'" in caplog.text
+
+
+def test_audit_hides_secret_looking_arguments():
+    args = json.loads(msa.audit_args({"password": "p", "access_token": "t", "api_key": "k", "query": "q",
+                                      "record_id": "R-1", "ssn": "123"}, frozenset({"ssn"})))
+    assert args == {"password": "***", "access_token": "***", "api_key": "***", "query": "q",
+                    "record_id": "R-1", "ssn": "***"}
