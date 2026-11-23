@@ -88,6 +88,27 @@ def test_oauth2_proxy_checks_the_id_token_not_plain_headers(monkeypatch):
     assert oauth2_proxy.person(request({"Authorization": f"Bearer {unverified}"})) is None
 
 
+def test_oauth2_proxy_needs_email_verified_true(monkeypatch):
+    """A missing email_verified claim is refused unless OIDC_ALLOW_MISSING_EMAIL_VERIFIED=true."""
+    monkeypatch.setenv("OIDC_ISSUER", "https://login.example.com")
+    monkeypatch.setenv("OIDC_CLIENT_ID", "proxy")
+    monkeypatch.setenv("OIDC_JWKS_URL", "https://login.example.com/keys")
+    monkeypatch.delenv("OIDC_ALLOW_MISSING_EMAIL_VERIFIED", raising=False)
+
+    def person(**claims):
+        t = token(RSA, "RS256", iss="https://login.example.com", aud="proxy", email="ed@example.com", **claims)
+        return oauth2_proxy.person(request({"Authorization": f"Bearer {t}"}))
+
+    assert person() is None
+    assert person(email_verified=False) is None
+    assert person(email_verified="false") is None
+    assert person(email_verified=True).email == "ed@example.com"
+    assert person(email_verified="true").email == "ed@example.com"
+    monkeypatch.setenv("OIDC_ALLOW_MISSING_EMAIL_VERIFIED", "true")
+    assert person().email == "ed@example.com"
+    assert person(email_verified=False) is None
+
+
 def test_unknown_or_missing_setup_refuses_everyone(monkeypatch):
     monkeypatch.setenv("LOGIN_CHECK", "")
     assert signed_in_person(request(host="localhost")) is None

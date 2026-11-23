@@ -147,7 +147,8 @@ Line numbers refer to commit `e0c0d94`. Status: **Fixed** (in code, with a test)
 - **Login checks.** Each module allows only asymmetric algorithms (RS256 and/or ES256, never
   HS*). `aud` is required, and `iss` is required wherever it is configured. Keys come from the
   configured JWKS URL over https. Unsigned `X-Forwarded-*` headers are ignored, and
-  `email_verified: false` is refused.
+  `email_verified` must be `true`; a missing claim is refused unless
+  `OIDC_ALLOW_MISSING_EMAIL_VERIFIED=true` (see the security team's review below).
 - **Admin CLI.** Revoke and restore normalize the email the same way the servers do.
 - **Transport security.** DNS-rebinding protection is off on the MCP server. That is correct for
   a public server that authenticates with bearer tokens.
@@ -218,6 +219,15 @@ Neither run reported a Medium or High issue.
    it; an upstream report would fix it for others.
 3. **Rate limiting.** It stays the proxy's job. The docs now say so, but nothing in the code
    enforces it.
+
+## Security team review, round 1
+
+The security team reviewed commit `d05310f` and raised two Low findings.
+
+| ID | Finding | Outcome |
+|---|---|---|
+| VULN-001 | `oauth2_proxy` accepted a token with no `email_verified` claim (it refused only an explicit `false`, the same rule oauth2-proxy itself uses). | Fixed. The claim must be `true` (or `"true"`). `OIDC_ALLOW_MISSING_EMAIL_VERIFIED=true` accepts a missing claim for providers that don't send it; an explicit `false` is always refused. |
+| VULN-002 | Revoke flags have no TTL and could be evicted under memory pressure. | Fixed with a startup check: the MCP server reads Redis's `maxmemory-policy` and refuses to start on `allkeys-*`. A `volatile-*` policy starts with a warning (revoke flags are safe there, but sessions and the used-code markers have TTLs and can be evicted), and so does a Redis that won't report its policy. No TTL was added: under a `volatile-*` policy Redis evicts only keys that have one, so a TTL would make the flag evictable, and revoke would end on its own after the TTL. Revoke also deletes the person's grants and tokens at once, and every token needs a live grant, so an evicted flag could not revive an existing session; it could only let the person click Allow again. |
 
 ## Not covered
 

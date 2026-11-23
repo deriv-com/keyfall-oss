@@ -50,6 +50,7 @@ import re
 import secrets
 import socket
 import time
+from contextlib import asynccontextmanager
 from typing import Any, Callable, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -424,7 +425,9 @@ class AllowPageOAuthProvider:
         refresh:<sha256>       refresh token record (until the grant ends)
         refresh-grace:<sha256> a just-rotated refresh token, for concurrent refreshes (30 s)
         refresh-used:<sha256>  a rotated refresh token -> its grant id (reuse detection)
-        revoked:<email>        set by an admin: everything for this person is refused
+        revoked:<email>        set by an admin: everything for this person is refused. No TTL on
+                               purpose: it lasts until restore, and under a volatile-* policy
+                               Redis never evicts a key without one.
         audit                  stream of events
     """
 
@@ -792,6 +795,30 @@ def redis_client() -> aioredis.Redis:
                              socket_timeout=5, socket_connect_timeout=5)
 
 
+async def check_eviction_policy(redis) -> None:
+    """Refuse to start on a Redis that may evict revoke flags when it fills up.
+
+    noeviction never evicts. volatile-* only evicts keys with a TTL: revoke flags have none, but
+    sessions and the used-code and refresh-reuse markers do, so it gets a warning. Any other
+    policy (allkeys-*) could evict a revoke flag, and a revoked person could then click Allow
+    again. A Redis that won't report its policy gets a warning, not a refusal.
+    """
+    try:
+        policy = str((await redis.info("memory")).get("maxmemory_policy") or "")
+    except Exception as exc:  # noqa: BLE001  managed Redis may hide INFO; Redis may be down
+        logger.warning("could not read Redis maxmemory-policy (%s): it must be noeviction or volatile-*",
+                       type(exc).__name__)
+        return
+    if not policy:
+        logger.warning("Redis did not report its maxmemory-policy: it must be noeviction or volatile-*")
+    elif policy.startswith("volatile-"):
+        logger.warning("Redis maxmemory-policy is %s: revoke flags are safe, but a full Redis can evict "
+                       "sessions and the used-code and refresh-reuse markers. noeviction is recommended.", policy)
+    elif policy != "noeviction":
+        raise RuntimeError(f"Redis maxmemory-policy is {policy}, which can evict revoke flags. "
+                           "Set it to noeviction (or a volatile-* policy).")
+
+
 def _authorize_endpoint(handler: Callable[[Request], Any], allow_page_url: str,
                         issuer: str) -> Callable[[Request], Any]:
     """The SDK's /authorize, with two changes to its error answers.
@@ -871,6 +898,18 @@ def build_mcp(register_tools: Callable[[MCPServer, Any], None], redis=None, *, n
                                            "Access-Control-Allow-Origin": "*"})
 
     app.router.routes.insert(0, Route("/.well-known/oauth-authorization-server", as_metadata, methods=["GET"]))
+
+    # Check Redis before serving. Runs whether the app is served on its own or mounted (the
+    # host app enters this same lifespan, see below).
+    session_lifespan = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def lifespan(a):
+        await check_eviction_policy(redis)
+        async with session_lifespan(a) as state:
+            yield state
+
+    app.router.lifespan_context = lifespan
     return mcp, app
 
 

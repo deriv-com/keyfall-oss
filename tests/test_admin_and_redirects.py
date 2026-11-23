@@ -4,11 +4,14 @@ from __future__ import annotations
 import inspect
 
 import pytest
+import redis
+from starlette.testclient import TestClient
 
 import admin
 import allow_page
 import mcp_server_auth as msa
 from conftest import pkce
+from demo_server import create_app
 
 
 def test_connections_revoke_and_restore(world, monkeypatch):
@@ -132,3 +135,42 @@ def test_web_callbacks_can_be_limited_to_listed_domains(monkeypatch):
         assert f("https://evilagent.example.com/cb") is False
         assert f("http://127.0.0.1:5555/callback") is True               # this computer is never a website
         assert f("cursor://anysphere.cursor-mcp/oauth/callback") is True
+
+
+class PolicyRedis:
+    """Just enough Redis for the MCP server to start: INFO memory reports this policy."""
+    def __init__(self, policy):
+        self.policy = policy
+
+    async def info(self, section):
+        if self.policy is None:
+            raise redis.ResponseError("unknown command 'info'")
+        return {"maxmemory_policy": self.policy}
+
+
+@pytest.mark.parametrize("policy", ["noeviction", "volatile-lru", "volatile-lfu", "volatile-ttl", "volatile-random"])
+def test_server_starts_when_redis_cannot_evict_revoke_flags(policy, caplog):
+    with TestClient(create_app(PolicyRedis(policy))):
+        pass
+    # volatile-* can still evict sessions and used-code markers: warn, recommend noeviction
+    assert ("noeviction is recommended" in caplog.text) == policy.startswith("volatile-")
+
+
+@pytest.mark.parametrize("policy", ["allkeys-lru", "allkeys-lfu", "allkeys-random"])
+def test_server_refuses_redis_that_can_evict_revoke_flags(policy):
+    with pytest.raises(RuntimeError, match=policy), TestClient(create_app(PolicyRedis(policy))):
+        pass
+
+
+def test_redis_that_hides_its_policy_gets_a_warning(caplog):
+    with TestClient(create_app(PolicyRedis(None))):
+        pass
+    assert "maxmemory-policy" in caplog.text
+
+
+def test_revoke_flag_never_expires(world, monkeypatch):
+    """No TTL: under a volatile-* policy Redis never evicts it, and it lasts until restore."""
+    monkeypatch.setattr(admin, "PREFIX", "t:")
+    monkeypatch.setattr(admin, "AUDIT_STREAM", "t:audit")
+    admin.revoke(world.r, "alice@example.com", by="admin@example.com")
+    assert world.r.ttl("t:revoked:alice@example.com") == -1

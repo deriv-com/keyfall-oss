@@ -169,7 +169,7 @@ no secret, and SHA-256 can't be reversed to find it.
 | A person who should lose access now | admin revoke: flag checked on every code, refresh and call |
 | A person removed from the SSO group | access ends when their grant ends (at most 14 days); revoke for immediately |
 | Redis down during approval | fails closed: no Allow button |
-| Redis filled up through the open `/register` | each registration is capped (10 callbacks, 8 KB); run Redis with `maxmemory-policy noeviction` so revoke flags are never evicted, and rate-limit the public endpoints at the proxy |
+| Redis filled up through the open `/register` | each registration is capped (10 callbacks, 8 KB); run Redis with `maxmemory-policy noeviction` so revoke flags are never evicted (the MCP server refuses to start on `allkeys-*`), and rate-limit the public endpoints at the proxy |
 | A tool leaking data a role shouldn't see | the role is enforced on the server inside each tool |
 
 What it does **not** protect against: malware on the person's laptop that reads the agent's

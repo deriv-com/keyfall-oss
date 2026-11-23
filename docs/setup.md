@@ -39,7 +39,7 @@ Then pick the login check that matches your setup and set its variables:
 | `cloudflare_access` | Cloudflare Access | `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` | turn on group claims for your identity provider in Zero Trust; they arrive under `custom.groups` |
 | `google_iap` | Google Cloud IAP | `IAP_AUDIENCE` | not in IAP's token: use `MCP_DEFAULT_ROLE`, or look groups up in your directory inside `google_iap.py` |
 | `pomerium` | Pomerium | `POMERIUM_ROUTE_HOST` (`POMERIUM_ISSUER` optional) | the `groups` claim; enable identity headers on the route |
-| `oauth2_proxy` | oauth2-proxy with any OpenID Connect provider | `OIDC_ISSUER`, `OIDC_CLIENT_ID` (`OIDC_JWKS_URL`, `OIDC_GROUPS_CLAIM` optional) | the provider's groups claim; run oauth2-proxy with `--pass-authorization-header` |
+| `oauth2_proxy` | oauth2-proxy with any OpenID Connect provider | `OIDC_ISSUER`, `OIDC_CLIENT_ID` (`OIDC_JWKS_URL`, `OIDC_GROUPS_CLAIM` optional; `OIDC_ALLOW_MISSING_EMAIL_VERIFIED=true` if your provider doesn't send `email_verified`) | the provider's groups claim; run oauth2-proxy with `--pass-authorization-header` |
 
 Something else (your app's own session, another proxy)? Write a module in `login_check/` with
 `def person(request) -> Person | None` and return `None` whenever you're not sure. Only trust
@@ -120,9 +120,11 @@ If a tool takes a secret or personal data as an argument, leave it out of the re
 - Reverse proxy: `proxy_buffering off`, `proxy_http_version 1.1`, `proxy_read_timeout 300s`, and
   forward `Host` and `X-Forwarded-Proto`. Buffering breaks streaming responses.
 - Redis: both hosts, same `REDIS_URL` and `MCP_REDIS_PREFIX`. Use TLS (`rediss://`) across networks,
-  and a password. Set `maxmemory-policy noeviction` (or a `volatile-*` policy): an `allkeys-*`
-  policy lets Redis evict revoke flags and used-code markers when it fills up, and `/register`
-  is open to anyone.
+  and a password. Set `maxmemory-policy noeviction`: Redis then never evicts anything, and
+  `/register` is open to anyone, so it can fill up. The MCP server reads the policy at startup:
+  - `allkeys-*`: it refuses to start, because a full Redis could evict revoke flags.
+  - `volatile-*`: it starts with a warning. Revoke flags have no TTL, so they are never evicted,
+    but sessions and the used-code and refresh-reuse markers can be.
 - Rate-limit `/register`, `/authorize` and `/token` per client IP at the proxy. They are public
   and unauthenticated by design; the server caps what one call can store or fetch, not how many
   calls arrive.
