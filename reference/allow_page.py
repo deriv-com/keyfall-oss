@@ -29,7 +29,8 @@ Environment
     LOGIN_CHECK           which login_check module to use (cloudflare_access, google_iap, ...)
     MCP_GROUP_ROLES       group=role pairs, highest role wins
                           (default "mcp-admin=admin,mcp-user=user,mcp-readonly=readonly")
-    MCP_DEFAULT_ROLE      optional role for people with no matching group (e.g. readonly)
+    MCP_DEFAULT_ROLE      optional role for people with no matching group: readonly or user, never
+                          admin (ignored). Everyone the SSO proxy lets in gets it.
     MCP_APP_NAME          shown on the page (default "My App")
     MCP_REDIS_PREFIX, MCP_EXTRA_REDIRECTS, MCP_BLOCKED_REDIRECT_DOMAINS, MCP_WEB_REDIRECT_DOMAINS
                           same values as the MCP server
@@ -100,8 +101,24 @@ def role_for(groups) -> Optional[str]:
     for role in ROLE_ORDER:
         if role in have:
             return role
-    default = os.environ.get("MCP_DEFAULT_ROLE", "").strip()
-    return default if default in ROLE_ORDER else None
+    return default_role()
+
+
+def default_role() -> Optional[str]:
+    """MCP_DEFAULT_ROLE, for login checks that carry no groups. Never admin: a missing group
+    must not make everyone the SSO proxy lets in an admin."""
+    role = os.environ.get("MCP_DEFAULT_ROLE", "").strip()
+    return role if role in ROLE_ORDER and role != "admin" else None
+
+
+def check_default_role() -> None:
+    """Runs at import (startup): say what MCP_DEFAULT_ROLE does, or that it is ignored."""
+    role = os.environ.get("MCP_DEFAULT_ROLE", "").strip()
+    if role and default_role() is None:
+        logger.error("MCP_DEFAULT_ROLE=%r is ignored: only readonly or user may be a default role", role)
+    elif role:
+        logger.warning("MCP_DEFAULT_ROLE=%s: everyone your SSO proxy lets in gets this role, "
+                       "even with no matching group", role)
 
 
 def current_user(request: Request) -> Optional[Dict[str, Any]]:
@@ -518,3 +535,6 @@ def authorize_decision(request: Request, req: str = Form(""), csrf: str = Form("
     if _is_web_callback(rc["redirect_uri"]):
         return _continue(agent, target)
     return RedirectResponse(target, status_code=303, headers={"Cache-Control": "no-store"})
+
+
+check_default_role()

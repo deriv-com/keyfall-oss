@@ -48,10 +48,10 @@ Claude Code, on Alex's laptop), **the MCP server**, **the SSO** and **the Allow 
 4. The agent identifies itself, one of two ways:
    - **CIMD** (Client ID Metadata Document, preferred by the current MCP spec): its `client_id`
      is an https URL its vendor hosts, serving a small JSON file with its name and redirect
-     URIs. Nothing is registered. The Allow page names the publishing domain, but says
-     "Verified" only when the callback is an https page on that same domain: any app on the
-     laptop could start a sign-in with a well-known vendor's `client_id` and its own localhost
-     listener.
+     URIs. Nothing is registered. The Allow page shows "Verified by" the vendor's domain only
+     when the callback is an https page on that same domain. A callback on the person's computer
+     gets no badge: any app on the laptop could start a sign-in with a well-known vendor's
+     `client_id` and its own localhost listener.
    - **DCR** (Dynamic Client Registration, the older way most agents still use):
      `POST /register` with its name and callback address → a `client_id`, kept 90 days.
    Either way the callback address must pass the callback rules: this computer (`localhost`),
@@ -76,7 +76,8 @@ Claude Code, on Alex's laptop), **the MCP server**, **the SSO** and **the Allow 
    groups to a **role**: exact match, highest role wins.
 3. It checks the signed note (signature, audience, age, `S256`, callback address) and Alex's
    **revoke flag**. If any check can't be made, there is no Allow button.
-4. It shows: who is signed in, the role, the agent's name (verified or self-declared), where the
+4. It shows: who is signed in, the role, the agent's name (with a badge when it is verified or
+   self-registered), where the
    code will go, what the agent can and can't do. The form carries a CSRF token tied to Alex
    and this signed note; the page can't be framed or cached.
 
@@ -153,7 +154,7 @@ no secret, and SHA-256 can't be reversed to find it.
 | API key copied from a laptop, repo or backup | there is none; nothing long-lived is stored on the laptop |
 | Code stolen from a URL, history or log | PKCE: the code is useless without the secret |
 | Agent tricked into sending the code elsewhere | callback rules (this computer, a listed app callback or a listed website), checked at registration, `/authorize` and on the Allow page, with one reading for every URL parser (no `\`, `user@`, `%` in the host or control characters); the code is bound to the callback |
-| A link to the Allow page for someone else's agent (consent phishing) | the page names where the code goes and whether the agent's name is verified; Allow can't be hit by a stray Enter or in the first 0.7 s; a website receives codes only when listed in `MCP_WEB_REDIRECT_DOMAINS`, so a stranger's own site never gets one |
+| A link to the Allow page for someone else's agent (consent phishing) | the page names where the code goes and marks a self-registered agent's name as given by the agent itself; Allow can't be hit by a stray Enter or in the first 0.7 s; a website receives codes only when listed in `MCP_WEB_REDIRECT_DOMAINS`, so a stranger's own site never gets one |
 | The public host used as an open redirector | `/authorize` errors for a website callback are answered on the MCP host, never redirected |
 | An agent using several servers sends a code to the wrong one (mix-up) | every authorization response carries `iss` (RFC 9207), advertised in the metadata, so the agent can check which server answered |
 | Someone tampers with the request in the browser | the signed note: changing the callback or hash breaks the signature |
@@ -168,7 +169,7 @@ no secret, and SHA-256 can't be reversed to find it.
 | A person who should lose access now | admin revoke: flag checked on every code, refresh and call |
 | A person removed from the SSO group | access ends when their grant ends (at most 14 days); revoke for immediately |
 | Redis down during approval | fails closed: no Allow button |
-| Redis filled up through the open `/register` | each registration is capped (10 callbacks, 8 KB); run Redis with `maxmemory-policy noeviction` so revoke flags are never evicted, and rate-limit the public endpoints at the proxy |
+| Redis filled up through the open `/register` | each registration is capped (10 callbacks, 8 KB); run Redis with `maxmemory-policy noeviction` so revoke flags are never evicted (the MCP server refuses to start on `allkeys-*`), and rate-limit the public endpoints at the proxy |
 | A tool leaking data a role shouldn't see | the role is enforced on the server inside each tool |
 
 What it does **not** protect against: malware on the person's laptop that reads the agent's

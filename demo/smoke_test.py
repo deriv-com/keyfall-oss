@@ -1,6 +1,6 @@
 """Walk the whole sign-in against the running demo, the way an agent does, and call a tool.
 
-    python demo/smoke_test.py            (after: cd demo && docker compose up --build)
+    python demo/smoke_test.py            (after demo/README.md step 1)
 
 Prints each step. Uses only httpx; no agent needed.
 """

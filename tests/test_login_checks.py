@@ -88,8 +88,50 @@ def test_oauth2_proxy_checks_the_id_token_not_plain_headers(monkeypatch):
     assert oauth2_proxy.person(request({"Authorization": f"Bearer {unverified}"})) is None
 
 
+def test_oauth2_proxy_needs_email_verified_true(monkeypatch):
+    """A missing email_verified claim is refused unless OIDC_ALLOW_MISSING_EMAIL_VERIFIED=true."""
+    monkeypatch.setenv("OIDC_ISSUER", "https://login.example.com")
+    monkeypatch.setenv("OIDC_CLIENT_ID", "proxy")
+    monkeypatch.setenv("OIDC_JWKS_URL", "https://login.example.com/keys")
+    monkeypatch.delenv("OIDC_ALLOW_MISSING_EMAIL_VERIFIED", raising=False)
+
+    def person(**claims):
+        t = token(RSA, "RS256", iss="https://login.example.com", aud="proxy", email="ed@example.com", **claims)
+        return oauth2_proxy.person(request({"Authorization": f"Bearer {t}"}))
+
+    assert person() is None
+    assert person(email_verified=False) is None
+    assert person(email_verified="false") is None
+    assert person(email_verified=True).email == "ed@example.com"
+    assert person(email_verified="true").email == "ed@example.com"
+    monkeypatch.setenv("OIDC_ALLOW_MISSING_EMAIL_VERIFIED", "true")
+    assert person().email == "ed@example.com"
+    assert person(email_verified=False) is None
+
+
 def test_unknown_or_missing_setup_refuses_everyone(monkeypatch):
     monkeypatch.setenv("LOGIN_CHECK", "")
     assert signed_in_person(request(host="localhost")) is None
     monkeypatch.setenv("LOGIN_CHECK", "something_else")
     assert signed_in_person(request(host="localhost")) is None
+
+
+def test_oauth2_proxy_discovers_the_jwks_url_once(monkeypatch):
+    """The Allow page runs in a thread pool: concurrent first requests fetch discovery once."""
+    import threading
+    calls = []
+
+    def fake_get(url, timeout):
+        calls.append(url)
+        time.sleep(0.05)
+        return SimpleNamespace(json=lambda: {"jwks_uri": "https://login.example.com/keys"})
+
+    monkeypatch.delenv("OIDC_JWKS_URL", raising=False)
+    monkeypatch.setattr(oauth2_proxy, "_jwks_urls", {})
+    monkeypatch.setattr(oauth2_proxy.httpx, "get", fake_get)
+    threads = [threading.Thread(target=oauth2_proxy._jwks_url, args=("https://login.example.com",)) for _ in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(calls) == 1

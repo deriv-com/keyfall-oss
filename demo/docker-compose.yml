@@ -1,6 +1,7 @@
 # Demo: the MCP server, the Allow page and Redis on your laptop. No SSO needed: the Allow page
 # uses the demo-only fake login (alice@example.com). Never deploy this file as it is.
 #
+#   echo "MCP_SIGNING_KEY=$(openssl rand -hex 32)" > .env     # once: this demo's own random key
 #   docker compose up --build
 #   claude mcp add --transport http demo http://localhost:8000/mcp
 name: keyfall-demo
@@ -13,8 +14,9 @@ x-app: &app
   restart: unless-stopped
 
 x-shared: &shared
-  # Demo key. In real use: a random value of 32+ bytes from your secret manager, same on both hosts.
-  MCP_SIGNING_KEY: ${MCP_SIGNING_KEY:-demo-only-key-do-not-use-in-production-0123456789}
+  # No built-in key: anyone could read it and sign codes. Create demo/.env once (see the top of this
+  # file). In real use: a random value of 32+ bytes from your secret manager, same on both hosts.
+  MCP_SIGNING_KEY: ${MCP_SIGNING_KEY:?create demo/.env first, see demo/README.md step 1}
   MCP_REDIS_PREFIX: "keyfall:"
   REDIS_URL: redis://redis:6379/0
 

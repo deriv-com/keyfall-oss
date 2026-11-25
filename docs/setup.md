@@ -37,9 +37,9 @@ Then pick the login check that matches your setup and set its variables:
 | `LOGIN_CHECK` | Your setup | Set | Groups |
 |---|---|---|---|
 | `cloudflare_access` | Cloudflare Access | `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` | turn on group claims for your identity provider in Zero Trust; they arrive under `custom.groups` |
-| `google_iap` | Google Cloud IAP | `IAP_AUDIENCE` | not in IAP's token: use `MCP_DEFAULT_ROLE`, or look groups up in your directory inside `google_iap.py` |
+| `google_iap` | Google Cloud IAP | `IAP_AUDIENCE` | not in IAP's token: look groups up in your directory inside `google_iap.py`, or use `MCP_DEFAULT_ROLE` (then IAP's access policy decides who gets that role) |
 | `pomerium` | Pomerium | `POMERIUM_ROUTE_HOST` (`POMERIUM_ISSUER` optional) | the `groups` claim; enable identity headers on the route |
-| `oauth2_proxy` | oauth2-proxy with any OpenID Connect provider | `OIDC_ISSUER`, `OIDC_CLIENT_ID` (`OIDC_JWKS_URL`, `OIDC_GROUPS_CLAIM` optional) | the provider's groups claim; run oauth2-proxy with `--pass-authorization-header` |
+| `oauth2_proxy` | oauth2-proxy with any OpenID Connect provider | `OIDC_ISSUER`, `OIDC_CLIENT_ID` (`OIDC_JWKS_URL`, `OIDC_GROUPS_CLAIM` optional; `OIDC_ALLOW_MISSING_EMAIL_VERIFIED=true` if your provider doesn't send `email_verified`) | the provider's groups claim; run oauth2-proxy with `--pass-authorization-header` |
 
 Something else (your app's own session, another proxy)? Write a module in `login_check/` with
 `def person(request) -> Person | None` and return `None` whenever you're not sure. Only trust
@@ -50,7 +50,8 @@ Map groups to roles, highest first wins, exact match only:
 
 ```bash
 MCP_GROUP_ROLES="mcp-admin=admin,mcp-user=user,mcp-readonly=readonly"
-MCP_DEFAULT_ROLE=            # optional, e.g. readonly, for setups without groups
+MCP_DEFAULT_ROLE=            # optional, readonly or user (never admin), for setups without groups:
+                             # everyone the SSO proxy lets in gets it
 MCP_APP_NAME="My App"        # shown on the page
 ```
 
@@ -111,7 +112,8 @@ callback, which need no listing. `*` allows any https site, leaving the Allow pa
 the site) as the only check; avoid it.
 
 Audit trail: `@audited` records each tool call's arguments (up to 2,000 characters per field).
-If a tool takes a secret or personal data as an argument, leave it out of the record.
+Arguments named like secrets (`password`, `token`, `api_key`, `secret`, ...) are recorded as
+`***`. List any others with `@audited(redis, redact=("ssn", "dob"))`.
 
 ## 5. Infrastructure
 
@@ -120,9 +122,12 @@ If a tool takes a secret or personal data as an argument, leave it out of the re
 - Reverse proxy: `proxy_buffering off`, `proxy_http_version 1.1`, `proxy_read_timeout 300s`, and
   forward `Host` and `X-Forwarded-Proto`. Buffering breaks streaming responses.
 - Redis: both hosts, same `REDIS_URL` and `MCP_REDIS_PREFIX`. Use TLS (`rediss://`) across networks,
-  and a password. Set `maxmemory-policy noeviction` (or a `volatile-*` policy): an `allkeys-*`
-  policy lets Redis evict revoke flags and used-code markers when it fills up, and `/register`
-  is open to anyone.
+  and a password: both are required outside one machine, and the MCP server warns at startup
+  when either is missing. Set `maxmemory-policy noeviction`: Redis then never evicts anything, and
+  `/register` is open to anyone, so it can fill up. The MCP server reads the policy at startup:
+  - `allkeys-*`: it refuses to start, because a full Redis could evict revoke flags.
+  - `volatile-*`: it starts with a warning. Revoke flags have no TTL, so they are never evicted,
+    but sessions and the used-code and refresh-reuse markers can be.
 - Rate-limit `/register`, `/authorize` and `/token` per client IP at the proxy. They are public
   and unauthenticated by design; the server caps what one call can store or fetch, not how many
   calls arrive.
@@ -148,7 +153,7 @@ If a tool takes a secret or personal data as an argument, leave it out of the re
 | `MCP_CIMD_TRUSTED_HOSTS` | ✓ | | any public host |
 | `LOGIN_CHECK` + its variables | | ✓ | required |
 | `MCP_GROUP_ROLES` | | ✓ | `mcp-admin=admin,mcp-user=user,mcp-readonly=readonly` |
-| `MCP_DEFAULT_ROLE` | | ✓ | none |
+| `MCP_DEFAULT_ROLE` | | ✓ | none (`readonly` or `user`; `admin` is ignored) |
 | `MCP_APP_NAME` | | ✓ | `My App` |
 
 ## 7. Admin

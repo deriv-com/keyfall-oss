@@ -24,6 +24,7 @@ uses a pretend login for `alice@example.com`.
 
 ```bash
 git clone https://github.com/deriv-com/keyfall-oss && cd keyfall-oss/demo
+echo "MCP_SIGNING_KEY=$(openssl rand -hex 32)" > .env    # once: a random key for this demo
 docker compose up --build
 ```
 
@@ -61,7 +62,9 @@ that only that agent can redeem (PKCE). Full walkthrough: [docs/how-it-works.md]
    Pomerium or oauth2-proxy with any OpenID Connect provider. Or write your own in a few lines.
 2. Add [reference/mcp_server_auth.py](reference/mcp_server_auth.py) to your MCP server
    (Python, MCP SDK 2.x) and register your tools; `caller()` tells each tool who is calling.
-3. Give both hosts the same signing key and Redis, map SSO groups to roles, and ship.
+3. Give both hosts the same signing key and Redis, map SSO groups to roles, and ship. Run the MCP
+   server with **one worker per replica**: MCP sessions live in memory, so `--workers 4` breaks
+   tool calls at random.
 
 Step-by-step: [docs/setup.md](docs/setup.md). Per-client install lines: [docs/clients.md](docs/clients.md).
 Prefer to have an agent do it? The [Claude Code skill](skill/keyfall/SKILL.md) walks it through.

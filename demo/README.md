@@ -14,8 +14,12 @@ uses a **demo-only fake login** that pretends you are `alice@example.com`. It on
 
 ```bash
 cd demo
+echo "MCP_SIGNING_KEY=$(openssl rand -hex 32)" > .env    # once: a random key for this demo
 docker compose up --build        # or: podman compose up --build
 ```
+
+The demo has no built-in signing key, so nobody can reuse a key they read in this repo. `.env`
+is git-ignored, and Compose reads it for every command below.
 
 ## 2. Connect an agent
 
