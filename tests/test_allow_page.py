@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import inspect
 import time
+from html import unescape
 from urllib.parse import parse_qs, urlsplit
 
 import jwt
@@ -134,12 +135,25 @@ def test_revoked_person_gets_no_button_and_revoke_check_fails_closed(world, monk
     assert page.status_code == 503 and "Allow</button>" not in page.text
 
 
+def _refresh_target(page: str) -> str:
+    """The meta-refresh URL, so the test can check its parsed host."""
+    marker = 'content="0;url='
+    start = page.find(marker)
+    assert start != -1
+    rest = page[start + len(marker):]
+    end = rest.find('"')
+    assert end != -1
+    return unescape(rest[:end])
+
+
 def test_web_callback_gets_a_navigation_hand_off(world, monkeypatch):
     monkeypatch.setenv("MCP_WEB_REDIRECT_DOMAINS", "agent.example.com")
     redirect = "https://agent.example.com/oauth/callback"
     r = world.decide(note(world, redirect))
     assert r.status_code == 200 and 'http-equiv="refresh"' in r.text
-    assert "https://www.agent.example.com" in r.headers["content-security-policy"] or "agent.example.com" in r.text
+    parts = urlsplit(_refresh_target(r.text))
+    assert parts.scheme == "https" and parts.hostname == "agent.example.com"
+    assert parts.path == "/oauth/callback" and "code" in parse_qs(parts.query)
 
 
 def test_existing_query_on_redirect_is_kept(world):
