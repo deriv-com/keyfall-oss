@@ -259,9 +259,9 @@ The note’s claims:
   "resource": "https://mcp.example.com/mcp"
 }`,
   fields:[['iss','Who signed it: the MCP server.'],['aud','What it is for: a request, nothing else.'],['exp','10 minutes to sign in and decide.'],['the rest','The /authorize request, copied as it was.'],['HS256','The signature, made with the key both hosts share. Change one character and the check fails.']]},
- {title:'The IdP proxy signs Alex in', hold:{A:['secret'],P:['note']}, redis:['client'], gate:true,
+ {title:'The SSO proxy signs Alex in', hold:{A:['secret'],P:['note']}, redis:['client'], gate:true,
   msgs:[['B','P','note + Alex’s signed identity',COL.note]], act:{P:['checks note + identity → role',COL.fg]},
-  what:'The IdP proxy in front of the Allow page does what it does for any internal site: it signs Alex in, with MFA, and adds a signed identity token to the request. The Allow page checks that token with the proxy’s public keys, and maps Alex’s groups to a role. If the check fails, there is no Allow button.',
+  what:'The SSO proxy in front of the Allow page does what it does for any internal site: it signs Alex in, with MFA, and adds a signed identity token to the request. The Allow page checks that token with the proxy’s public keys, and maps Alex’s groups to a role. If the check fails, there is no Allow button.',
   wire:`The proxy adds its signed identity token:
 
 Cloudflare Access   Cf-Access-Jwt-Assertion: eyJ…
@@ -345,9 +345,9 @@ Authorization: Bearer wT1OPKOe…   →   401 Unauthorized`,
 
 /* ---------- what-if scenarios ---------- */
 const WHATIF = [
- {key:'sso', label:'The MCP server is behind the IdP proxy', base:1, hold:{}, redis:[], ssoMcp:true,
-  msgs:[['A','MG','POST /mcp',COL.fg],['MG','A','302 → IdP login page (HTML) ✗',COL.red]], act:{A:['expects JSON → fails ✗',COL.red]},
-  what:'This is why staff and agents reach the MCP server with no proxy in front. Behind the IdP proxy, the agent’s first call gets a redirect to an HTML login page instead of a 401 with JSON. The agent can’t sign in to a web page, so it fails.',
+ {key:'sso', label:'The MCP server is behind the SSO proxy', base:1, hold:{}, redis:[], ssoMcp:true,
+  msgs:[['A','MG','POST /mcp',COL.fg],['MG','A','302 → SSO login page (HTML) ✗',COL.red]], act:{A:['expects JSON → fails ✗',COL.red]},
+  what:'This is why staff and agents reach the MCP server with no proxy in front. Behind the SSO proxy, the agent’s first call gets a redirect to an HTML login page instead of a 401 with JSON. The agent can’t sign in to a web page, so it fails.',
   wire:`POST /mcp HTTP/1.1
 Host: mcp.example.com
 
@@ -380,7 +380,7 @@ grant_type=authorization_code&code=eyJ…&code_verifier=guess
   -> 400 invalid_grant          (reuse: the grant ends)
 POST /token  refresh_token=<Alex's newer token>
   -> 400 invalid_grant          (the whole chain is gone)`,
-  fields:[['reuse','The old token is remembered until the grant ends, so it can be recognised.'],['grant ends','Both sides lose access. Only Alex can get it back, through the IdP.']]},
+  fields:[['reuse','The old token is remembered until the grant ends, so it can be recognised.'],['grant ends','Both sides lose access. Only Alex can get it back, by signing in with SSO again.']]},
 ];
 
 /* ---------- the isometric scene (scene.js, built by build-scene.mjs) ---------- */
@@ -389,7 +389,7 @@ const ctx = document.createElement('canvas').getContext('2d');
 function tw(s, size, weight=600){ ctx.font = `${weight} ${size}px Inter`; return ctx.measureText(s).width; }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function el(tag, attrs={}, html=''){ const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (html) e.innerHTML = html; return e; }
-const NAME = {A:'Agent', B:'Browser', M:'MCP server', P:'Allow page', R:'Redis', X:'Someone else', D:'Admin', MG:'IdP gate'};
+const NAME = {A:'Agent', B:'Browser', M:'MCP server', P:'Allow page', R:'Redis', X:'Someone else', D:'Admin', MG:'SSO gate'};
 const WORD = {secret:'secret', hash:'hash', note:'signed note', code:'code', access:'access token', refresh:'refresh token'};
 const TAG = {client:COL.node, used:COL.code, grant:COL.grant, access:COL.access, refresh:COL.refresh, revoked:COL.red};
 const shade = (hex, f) => { const n = parseInt(hex.slice(1), 16); return '#' + [16, 8, 0].map(b => Math.round(((n >> b) & 255) * f).toString(16).padStart(2, '0')).join(''); };
