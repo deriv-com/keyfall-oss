@@ -1,0 +1,727 @@
+<!doctype html>
+<html lang="en" class="iso"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keyfall sign-in, step by step</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="scene.css">
+<style>
+:root{--bg:#181C25;--panel:#1E2330;--line:#2E3442;--fg:#F4F6F9;--muted:#A3ABBA;--faint:#6E7686;--coral:#FF444F}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+svg text{font-family:Inter,system-ui,sans-serif}
+svg .mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+.brand{display:flex;align-items:center;gap:12px;font-size:22px;font-weight:700;letter-spacing:-.01em}
+.brand svg{width:32px;height:32px}.brand em{font-style:normal;color:var(--coral)}
+/* interactive page: one screen, no page scroll */
+html,body{height:100%}
+body:not(.frame){overflow:hidden}
+.app{height:100vh;height:100dvh;display:grid;grid-template-columns:minmax(0,1fr) clamp(340px,27vw,430px);grid-template-rows:auto minmax(0,1fr)}
+.bar{grid-column:1/-1;display:flex;align-items:center;gap:18px;padding:12px 20px;border-bottom:1px solid var(--line)}
+.bar .brand{font-size:18px}.bar .brand svg{width:26px;height:26px}
+.bar h1{font-size:16px;font-weight:600;color:var(--muted);letter-spacing:0}
+.bar .keys{margin-left:auto;font-size:13px;color:var(--faint)}
+.bar kbd{font:500 12px "JetBrains Mono",monospace;border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--muted)}
+.stage{min-height:0;min-width:0;position:relative;display:flex;flex-direction:column;background:radial-gradient(900px 520px at 0% 0%,rgba(255,68,79,.10),transparent 62%),#151922}
+.stage svg{flex:1;min-height:0;width:100%;height:100%;display:block}
+.side{min-height:0;display:flex;flex-direction:column;gap:14px;padding:20px 20px 16px;border-left:1px solid var(--line);background:#191D27}
+.side .k{color:var(--coral);font-size:12.5px;font-weight:700;letter-spacing:.2em;text-transform:uppercase}
+.side h2{font-size:22px;line-height:1.2;letter-spacing:-.02em;margin-top:-6px}
+.side p{color:#D6DAE2;font-size:15.5px;line-height:1.55}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}
+.tabs button{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;padding:7px 10px;color:var(--muted);font-size:14px}
+.tabs button.on{color:var(--fg);border-bottom-color:var(--coral)}
+.tabbody{flex:1;min-height:0;overflow:auto;padding-right:4px}
+.tabbody pre[hidden],.tabbody dl[hidden]{display:none}
+.ctrl{display:flex;align-items:center;gap:8px}
+.ctrl #play{flex:1}
+button{font:600 15px Inter,system-ui,sans-serif;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 14px;cursor:pointer}
+button:hover{border-color:#4A5162}
+button:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
+button.primary{background:var(--coral);border-color:var(--coral);color:#fff}
+.dots{display:grid;grid-template-columns:repeat(13,1fr);gap:4px}
+.dots button{padding:6px 0;font-size:12.5px;border-radius:7px}
+.dots button.on{background:#fff;color:#181C25;border-color:#fff}
+.whatif{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:12px}
+.whatif span{color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}
+.whatif .wbtns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.whatif button{font-size:13px;padding:7px 9px;border-style:dashed;text-align:left;line-height:1.3}
+.whatif button.on{border-color:var(--coral);color:#FFB3B7;border-style:solid}
+pre{background:#11141B;border:1px solid var(--line);border-radius:10px;padding:12px;overflow-x:auto;font:12.5px/1.6 "JetBrains Mono",ui-monospace,monospace;color:#D6DAE2;white-space:pre}
+dl{display:grid;grid-template-columns:1fr;gap:3px;font-size:14.5px;line-height:1.45;padding-top:4px}
+dt{font:500 13px/1.6 "JetBrains Mono",ui-monospace,monospace;color:#fff;background:#232938;border-radius:6px;padding:1px 8px;justify-self:start;margin-top:8px}
+dd{color:#C9CED8}
+@media (max-width:900px),(max-height:560px){
+  body:not(.frame){overflow:auto}
+  .app{height:auto;grid-template-columns:1fr;grid-template-rows:auto auto auto}
+  .stage{aspect-ratio:1600/760}
+  .side{border-left:0;border-top:1px solid var(--line)}
+  .tabbody{max-height:none;overflow:visible}
+  .bar .keys{display:none}
+}
+/* phone: scene pinned at the top, controls pinned at the bottom, the rest scrolls */
+.ptray{display:none}
+@media (max-width:700px){
+  body:not(.frame){padding-bottom:76px}
+  .app{display:flex;flex-direction:column;height:auto}
+  .bar{gap:4px 10px;padding:10px 16px;flex-wrap:wrap}
+  .bar .brand{font-size:16px}.bar .brand svg{width:22px;height:22px}
+  .bar h1{font-size:13px}
+  .stage{display:contents}
+  #stage-i{order:1;position:sticky;top:0;z-index:4;flex:none;width:100%;height:auto;aspect-ratio:1350/594;background:#151922;border-bottom:1px solid var(--line)}
+  .cap{order:2;height:auto;grid-template-columns:1fr;padding:12px 16px 0;overflow:visible}
+  .cap li div{white-space:normal;overflow-wrap:anywhere}
+  .ptray{order:3;display:block;padding:14px 16px 2px}
+  .side{order:4;border:0;padding:16px 16px 18px}
+  .tabbody{overflow:visible}
+  .ctrl{position:fixed;left:0;right:0;bottom:0;z-index:5;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:#191D27;border-top:1px solid var(--line)}
+  .ctrl button{padding:11px 16px}
+  .dots{grid-template-columns:repeat(7,1fr);gap:6px}
+  .dots button{padding:9px 0;font-size:14px}
+  .phone #scene .nm text:first-child{font-size:32px;letter-spacing:3px}
+  .phone #scene .nm text + text{display:none}
+  .phone #scene > text{display:none}
+  .phone #chips text{display:none}
+  .phone #tray{display:none}
+}
+.ptray b{display:block;color:var(--muted);font-size:11.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;margin-bottom:8px}
+.ptray ul{list-style:none;display:flex;flex-wrap:wrap;gap:6px}
+.ptray li{display:flex;align-items:center;gap:6px;border:1px solid var(--c);border-radius:999px;padding:4px 10px;font-size:13px;font-weight:600;color:var(--c)}
+.ptray li i{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.ptray li small{font-size:10.5px;font-weight:700;letter-spacing:.08em;color:var(--muted)}
+.ptray li.live{background:color-mix(in srgb,var(--c) 14%,transparent)}
+.ptray li.live small{color:var(--c)}
+.ptray li.later{opacity:.4;border-style:dashed}
+.ptray li.gone{opacity:.55}.ptray li.gone span{text-decoration:line-through}
+/* frame mode: a 1600x960 still for the article */
+body.frame *{transition:none!important}   /* stills: parts show at once, not mid-fade */
+body.frame{width:1600px;height:1100px;overflow:hidden;position:relative;padding:48px 72px;
+  background:radial-gradient(1000px 560px at 0% 0%,rgba(255,68,79,.16),transparent 62%),radial-gradient(circle,rgba(255,255,255,.05) 1px,transparent 1.3px) 0 0/28px 28px,#181C25}
+.frame .top{display:flex;justify-content:space-between;align-items:center}
+.frame .tag{font-size:15px;letter-spacing:.28em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.frame .kick{margin-top:30px;color:var(--coral);font-size:17px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;display:flex;align-items:center;gap:18px}
+.frame .kick::before{content:"";width:40px;height:2px;background:var(--coral)}
+.frame h1{font-size:46px;line-height:1.08;font-weight:800;letter-spacing:-.03em;margin-top:12px}
+.frame .fstage{position:absolute;left:0;top:182px;width:1600px;bottom:0;display:flex;flex-direction:column}
+.frame #stage{flex:none;width:1600px;height:760px}
+.cap{list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;padding:12px 16px 0;height:118px;flex:none;overflow:hidden;align-content:start}
+.cap li div{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cap li{background:#11141B;border:1px solid #2E3442;border-left:3px solid var(--c,#A3ABBA);border-radius:10px;padding:7px 11px;font-size:14px;line-height:1.35;color:#E9EDF3;display:grid;grid-template-columns:auto 1fr;gap:2px 9px;align-items:center;transition:box-shadow .3s,border-color .3s}
+.cap li div span{display:block}
+.cap li em{font-style:normal;font-weight:800;color:#11141B;background:var(--c);border-radius:50%;min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;align-self:center}
+.cap li span{color:#A3ABBA;font-weight:600;font-size:12.5px}
+.cap li.act{border-left-style:dotted;color:var(--c)}
+.cap li.act span{color:#A3ABBA}
+.cap li.click{border-left-color:#FF444F;align-items:center}
+.cap li.click i{width:10px;height:10px;border-radius:50%;background:#FF444F;box-shadow:0 0 0 4px rgba(255,68,79,.28)}
+.cap li.now{border-color:var(--c);box-shadow:0 0 0 1px var(--c)}
+.frame .cap{padding:6px 72px 0;grid-template-columns:repeat(2,1fr);gap:10px 14px;height:154px;min-height:0;align-content:start}
+.frame .cap li{font-size:21px;padding:9px 15px;gap:4px 12px}
+.frame .cap li span{font-size:17px}
+.frame .cap li em{min-width:28px;height:28px;font-size:16px}
+.tap{animation:kf-tap 1s ease-out forwards}
+@keyframes kf-tap{from{r:8;opacity:1}to{r:44;opacity:0}}
+</style></head>
+<body>
+<div class="app" id="page">
+  <header class="bar">
+    <div class="brand"><svg viewBox="0 0 250 250"><rect width="250" height="250" rx="62.5" fill="#FF444F"/><path fill="#fff" d="m156.97 51.47-8.1 45.92h-28.11c-26.22 0-51.22 21.24-55.85 47.47l-1.96 11.16c-4.61 26.22 12.88 47.47 39.11 47.47h23.44c19.11 0 37.32-15.47 40.68-34.58l21.59-122.38-30.81 4.95Zm-19.94 113.1c-1.03 5.9-6.35 10.71-12.25 10.71h-14.24c-11.79 0-19.67-9.57-17.6-21.37l1.23-6.96c2.09-11.79 13.34-21.37 25.12-21.37h24.62l-6.88 39Z"/></svg><span>Deriv <em>Keyfall</em></span></div>
+    <h1>How an agent signs in, step by step</h1>
+    <div class="keys"><kbd>←</kbd> <kbd>→</kbd> to step · <kbd>Space</kbd> to play</div>
+  </header>
+  <main class="stage"><ol id="cap" class="cap" aria-live="polite"></ol><svg id="stage-i" viewBox="0 0 1600 760" preserveAspectRatio="xMidYMid meet" role="img" aria-label="The Keyfall sign-in flow"></svg></main>
+  <div class="ptray" id="ptray" aria-live="polite"></div>
+  <aside class="side" aria-live="polite">
+    <div class="k" id="d-k"></div>
+    <h2 id="d-title"></h2>
+    <p id="d-what"></p>
+    <div class="tabs" role="tablist"><button role="tab" data-tab="fields" class="on">Fields</button><button role="tab" data-tab="wire">Wire</button></div>
+    <div class="tabbody"><dl id="d-fields"></dl><pre id="d-wire" hidden></pre></div>
+    <nav class="ctrl">
+      <button id="prev" aria-label="Previous step">◀</button>
+      <button id="play" class="primary">▶ Play step</button>
+      <button id="next" aria-label="Next step">▶</button>
+    </nav>
+    <div class="dots" id="dots"></div>
+    <div class="whatif" id="whatif"><span>What if…</span><div class="wbtns" id="wbtns"></div></div>
+  </aside>
+</div>
+
+<script src="scene.js"></script>
+<script>
+const COL = {agent:'#8792FF', alex:'#FF6B73', node:'#E9EDF3', sso:'#F5B544', fg:'#E9EDF3', muted:'#A3ABBA', red:'#FF444F',
+  secret:'#F5D565', hash:'#62B6F7', note:'#B69CFF', code:'#8FD46A', access:'#F59B4C', refresh:'#FF8FB1', grant:'#3FC1A5', grey:'#BDB3A3'};
+
+/* ---------- the tokens, shown in the tray ---------- */
+const TOK = [
+  {id:'secret', short:'stays on the agent', name:'Secret', sub:'PKCE code_verifier', life:'one sign-in', use:['Stays on the agent. Sent once,','at /token (step 10).'], born:5, dead:10, deadWord:'used'},
+  {id:'hash', short:'inside note + code', name:'Hash', sub:'PKCE code_challenge', life:'one sign-in', use:['The secret’s SHA-256. Rides','in the note and the code.'], born:5, dead:10, deadWord:'checked'},
+  {id:'note', short:'to the Allow page', name:'Signed note', sub:'JWT · iss mcp-server', life:'10 minutes', use:['Carries the request from the','MCP server to the Allow page.'], born:7, dead:9, deadWord:'spent'},
+  {id:'code', short:'traded at /token', name:'Code', sub:'JWT · iss allow-page', life:'60 seconds · once', use:['Proves Alex clicked Allow.','Traded for tokens at /token.'], born:9, dead:10, deadWord:'used'},
+  {id:'access', short:'every tool call', name:'Access token', sub:'random · hashed in Redis', life:'1 hour', use:['Sent with every tool call:','"this is Alex, role user".'], born:10, dead:13, deadWord:'ended', renew:12},
+  {id:'refresh', short:'for a new pair', name:'Refresh token', sub:'random · hashed in Redis', life:'works once', use:['Traded about every hour','for a new pair.'], born:10, dead:13, deadWord:'ended', renew:12},
+  {id:'grant', short:'in Redis', name:'Grant', sub:'Redis record', life:'14 days', use:['One Allow click. Every token','points to it; end it, all stop.'], born:10, dead:13, deadWord:'ended'},
+];
+
+/* ---------- the steps ---------- */
+const R = { // Redis rows
+  client:['client:7724…','90 days',COL.node], used:['code-used:<jti>','~6 min',COL.code], grant:['grant:SAyjFQ…','14 days',COL.grant],
+  access:['access:<hash>','1 hour',COL.access], refresh:['refresh:<hash>','once',COL.refresh], revoked:['revoked:alex@…','no expiry',COL.red]};
+const STEPS = [
+ {title:'Alex clicks Add', click:[['A',1,'Add']], hold:{}, redis:[],
+  msgs:[], act:{A:['has a URL, nothing else',COL.fg]},
+  what:'Alex pastes the server’s URL into the agent’s “add server” box and clicks Add. That is all the setup there is: no key and no secret. The agent has a URL and nothing else.',
+  wire:'https://mcp.example.com/mcp',
+  fields:[['URL','The only thing Alex gives the agent.']]},
+ {title:'The first call gets a 401 and a pointer', hold:{}, redis:[],
+  msgs:[['A','M','POST /mcp · no token',COL.fg],['M','A','401 · resource_metadata = /.well-known/…',COL.red]],
+  what:'The agent calls the server without a token. The server says no, and its WWW-Authenticate header points to a document that explains how to sign in.',
+  wire:`POST /mcp HTTP/1.1
+Host: mcp.example.com
+
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer error="invalid_token",
+  resource_metadata="https://mcp.example.com/
+    .well-known/oauth-protected-resource/mcp"`,
+  fields:[['401','No token, or a bad one.'],['WWW-Authenticate','The header that says how to authenticate.'],['resource_metadata','The URL of a document that says who issues tokens for this server.']]},
+ {title:'The agent reads two /.well-known/ documents', hold:{}, redis:[],
+  msgs:[['A','M','GET /.well-known/oauth-protected-resource/mcp\nGET /.well-known/oauth-authorization-server',COL.fg],['M','A','token issuer + endpoints',COL.fg]],
+  what:'Both documents sit at fixed /.well-known/ paths, so every OAuth client knows where to look. The first says who issues tokens for this server: the server itself. The second lists the endpoints and what they accept.',
+  wire:`GET /.well-known/oauth-protected-resource/mcp
+{
+  "resource": "https://mcp.example.com/mcp",
+  "authorization_servers": ["https://mcp.example.com"],
+  "scopes_supported": ["mcp"]
+}
+
+GET /.well-known/oauth-authorization-server
+{
+  "issuer": "https://mcp.example.com",
+  "authorization_endpoint": ".../authorize",
+  "token_endpoint": ".../token",
+  "registration_endpoint": ".../register",
+  "code_challenge_methods_supported": ["S256"]
+}`,
+  fields:[['resource','The server these tokens are for.'],['authorization_servers','Who issues the tokens. Here, the MCP server itself.'],['scopes_supported','The access an agent can ask for. Keyfall has one: mcp.'],['issuer','The server’s name. The agent checks it again in step 9.'],['*_endpoint','Where to register, send the person to approve, and get tokens.'],['S256','The PKCE hash method. The only one allowed.']]},
+ {title:'The agent registers itself', hold:{}, redis:['client'],
+  msgs:[['A','M','POST /register · name + callback URL',COL.fg],['M','R','',COL.muted],['M','A','201 · client_id',COL.fg]],
+  what:'The agent tells the server its name and where codes may be sent, and gets a client_id back. This is Dynamic Client Registration. The server keeps the record in Redis for 90 days.',
+  wire:`POST /register
+{
+  "client_name": "Example Agent",
+  "redirect_uris": ["http://127.0.0.1:53682/callback"],
+  "token_endpoint_auth_method": "none",
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"]
+}
+
+201 Created
+{ "client_id": "7724f3cf-7d82-4b15-81f3-8168131bc8c5", … }`,
+  fields:[['client_name','The name the Allow page shows, marked “given by the agent itself”.'],['redirect_uris','Where a code may be sent. Here, a listener on Alex’s own laptop. Websites are refused unless your team lists them.'],['token_endpoint_auth_method','none: the agent has no client secret. Anything copied to every laptop isn’t secret.'],['grant_types','authorization_code to sign in, refresh_token to renew.'],['response_types','code: “send me a code, not tokens”.'],['client_id','The server’s ID for this agent.']]},
+ {title:'The agent makes a secret and its hash', hold:{A:['secret','hash']}, redis:['client'],
+  msgs:[], act:{A:['secret → SHA-256 → hash',COL.secret]},
+  what:'This is PKCE (Proof Key for Code Exchange). The agent makes a random secret and keeps it in memory. It sends only the hash. At the end, it shows the secret once, and the server checks that it matches the hash. A stolen code is useless without it.',
+  wire:`verifier  = secrets.token_urlsafe(48)    # the secret
+digest    = hashlib.sha256(verifier.encode()).digest()
+challenge = base64url(digest)              # the hash`,
+  fields:[['code_verifier','The secret. It stays in the agent’s memory until step 10.'],['code_challenge','The SHA-256 hash of the secret. Safe to send through the browser: a hash can’t be turned back into the secret.'],['S256','The name of this hash method.']]},
+ {title:'The agent opens Alex’s browser at /authorize', hold:{A:['secret'],M:['hash']}, redis:['client'],
+  msgs:[['A','B','opens /authorize',COL.hash],['B','M','GET /authorize · hash + callback',COL.hash]],
+  what:'The agent starts a listener on a free local port and opens Alex’s browser at /authorize. The URL carries the hash, never the secret.',
+  wire:`GET /authorize
+  ?response_type=code
+  &client_id=7724f3cf-7d82-4b15-81f3-8168131bc8c5
+  &redirect_uri=http://127.0.0.1:53682/callback
+  &state=af0ifjsldkj
+  &code_challenge=xujOLIVFxFLstoM_G4xEiq3xXheo9I2NXl8Uw2oUDSA
+  &code_challenge_method=S256
+  &resource=https://mcp.example.com/mcp
+  &scope=mcp`,
+  fields:[['response_type','code: send a code back.'],['client_id','The ID from step 4.'],['redirect_uri','Must be one that was registered in step 4.'],['state','A random value. The agent checks that the same value comes back in step 9.'],['code_challenge','The hash from step 5.'],['resource','Which server the token is for. A token for one server won’t work on another.'],['scope','The access asked for: mcp.']]},
+ {title:'The server signs the request into a note', hold:{A:['secret'],B:['note']}, redis:['client'],
+  msgs:[['M','B','302 → Allow page ?req=<signed note>',COL.note]], act:{M:['signs the note (HS256)',COL.note]},
+  what:'The server doesn’t show a login page. It checks the request, signs all of it into a JWT (the signed note) and sends the browser to the Allow page. The note carries the request to the other host, and nobody on the way can change it.',
+  wire:`302 Found
+Location: https://portal.example.com/connect-agent/authorize
+          ?req=eyJhbGciOiJIUzI1NiIs…
+
+The note’s claims:
+{
+  "iss": "mcp-server",
+  "aud": "mcp-connect:request",
+  "exp": <iat + 600>,
+  "client_id": "7724f3cf-…",
+  "client_name": "Example Agent",
+  "redirect_uri": "http://127.0.0.1:53682/callback",
+  "code_challenge": "xujOLIVF…",
+  "state": "af0ifjsldkj",
+  "scopes": ["mcp"],
+  "resource": "https://mcp.example.com/mcp"
+}`,
+  fields:[['iss','Who signed it: the MCP server.'],['aud','What it is for: a request, nothing else.'],['exp','10 minutes to sign in and decide.'],['the rest','The /authorize request, copied as it was.'],['HS256','The signature, made with the key both hosts share. Change one character and the check fails.']]},
+ {title:'The SSO proxy signs Alex in', hold:{A:['secret'],P:['note']}, redis:['client'], gate:true,
+  msgs:[['B','P','note + Alex’s signed identity',COL.note]], act:{P:['checks note + identity → role',COL.fg]},
+  what:'The SSO proxy in front of the Allow page does what it does for any internal site: it signs Alex in, with MFA, and adds a signed identity token to the request. The Allow page checks that token with the proxy’s public keys, and maps Alex’s groups to a role. If the check fails, there is no Allow button.',
+  wire:`The proxy adds its signed identity token:
+
+Cloudflare Access   Cf-Access-Jwt-Assertion: eyJ…
+Google IAP          x-goog-iap-jwt-assertion: eyJ…
+Pomerium            X-Pomerium-Jwt-Assertion: eyJ…
+oauth2-proxy        Authorization: Bearer eyJ…
+
+Groups to role (highest wins):
+MCP_GROUP_ROLES="mcp-admin=admin,mcp-user=user,
+                 mcp-readonly=readonly"`,
+  fields:[['identity token','Signed by the proxy. Keyfall checks the signature with the proxy’s public keys, and checks expiry, audience and issuer.'],['groups → role','Alex is in mcp-user, so the role is user.'],['the note','Checked too: signature, issuer, audience, age.']]},
+ {title:'Alex clicks Allow, and the page signs a code', click:[['B',2,'Allow']], gate:true, hold:{A:['secret','code']}, redis:['client'],
+  msgs:[['P','B','303 → 127.0.0.1:53682/callback?code=…',COL.code],['B','A','code + state + iss',COL.code]], act:{P:['signs the code (60 s)',COL.code]},
+  what:'The Allow page shows who is signed in, the role, and where the code goes. When Alex clicks Allow, it signs a second JWT, the code, and sends the browser back to the agent’s listener.',
+  wire:`303 See Other
+Location: http://127.0.0.1:53682/callback
+  ?code=eyJhbGciOiJIUzI1NiIs…
+  &state=af0ifjsldkj
+  &iss=https://mcp.example.com
+
+The code’s claims:
+{
+  "iss": "allow-page",
+  "aud": "mcp-connect:code",
+  "exp": <iat + 60>,
+  "jti": "LnMXJjyISjwwrYFx3bmEulC2nNwnCJCA",
+  "sub": "alex@example.com",
+  "role": "user",
+  "client_id": "7724f3cf-…",
+  "redirect_uri": "http://127.0.0.1:53682/callback",
+  "code_challenge": "xujOLIVF…",
+  "resource": "https://mcp.example.com/mcp"
+}`,
+  fields:[['iss / aud','Different from the note’s. A note can’t be used as a code, or a code as a note.'],['exp','60 seconds.'],['jti','A unique ID. It makes the code single-use.'],['sub / role','Who clicked Allow, and as which role.'],['code_challenge','The hash, copied from the note. Checked in step 10.'],['state','The same value the agent sent in step 6.'],['iss (in the URL)','Which server answered, so an agent with several servers can’t mix them up.']]},
+ {title:'The agent trades the code and the secret for tokens', hold:{A:['access','refresh']}, redis:['client','used','grant','access','refresh'],
+  msgs:[['A','M','POST /token · code + secret',COL.code],['M','R','',COL.muted],['M','A','200 · access token + refresh token',COL.access]], act:{M:['SHA-256(secret) = hash ✓',COL.secret]},
+  what:'The agent sends the code and, for the first and only time, the secret, straight to the server. The server checks the code, checks that the secret’s hash matches the hash in the code, marks the code as used, and starts a grant. Then it returns two tokens.',
+  wire:`POST /token
+grant_type=authorization_code
+&code=eyJhbGciOiJIUzI1NiIs…
+&client_id=7724f3cf-…
+&redirect_uri=http://127.0.0.1:53682/callback
+&code_verifier=ney1HdeIdlfgi3FWni5Ze7oJ…
+
+200 OK
+{
+  "access_token": "wT1OPKOe69URiS8N_9aOofyC…",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "iEXkW7pHuxOfoZRbytM2DHPw…"
+}`,
+  fields:[['code_verifier','The secret from step 5. The server checks SHA-256(secret) = the hash inside the code.'],['code','Checked: signature, issuer, audience, 60 seconds, not used before.'],['access_token','Random. Lasts 1 hour. Redis keeps only its hash.'],['refresh_token','Random. Works once. Redis keeps only its hash.'],['expires_in','3600 seconds: when the access token ends.']]},
+ {title:'Every tool call carries the access token', hold:{A:['access','refresh']}, redis:['client','used','grant','access','refresh'],
+  msgs:[['A','M','tools/call · Bearer <access token>',COL.access],['M','R','',COL.muted],['M','A','result, as Alex (role user)',COL.fg]], act:{M:['token → grant → Alex, user',COL.access]},
+  what:'The server hashes the token, finds it in Redis, and follows it to the grant: Alex, role user, not revoked. The tool learns who is calling and decides what that role may see.',
+  wire:`POST /mcp
+Authorization: Bearer wT1OPKOe69URiS8N_9aOofyC…
+
+{"method": "tools/call",
+ "params": {"name": "get_record",
+            "arguments": {"record_id": "R-100"}}}`,
+  fields:[['Bearer','The access token. The server hashes it and looks it up.'],['caller()','What the tool sees: Alex’s email, name and role.'],['role','The tool decides on the server what this role may see.']]},
+ {title:'Every hour: a new pair, and the old one stops', hold:{A:['access','refresh']}, redis:['client','used','grant','access','refresh'], renew:true,
+  msgs:[['A','M','POST /token · refresh token',COL.refresh],['M','R','',COL.muted],['M','A','new access token + new refresh token',COL.access]], act:{M:['old refresh token deleted',COL.refresh]},
+  what:'A refresh token works once. The agent trades it for a new pair, and the server deletes the old one as it reads it. The grant’s end date doesn’t move.',
+  wire:`POST /token
+grant_type=refresh_token
+&refresh_token=iEXkW7pHuxOfoZRbytM2DHPw…
+
+200 OK  { new access_token, new refresh_token }`,
+  fields:[['works once','The old token is deleted the moment it is read.'],['30-second grace','Two agent windows that refresh at the same second both get the same new pair.'],['after 30 s','The old token coming back means someone copied it. The server ends the whole grant.'],['14 days','Refreshing never extends the grant.']]},
+ {title:'The grant ends', hold:{}, redis:['client','used','revoked'], ended:true,
+  msgs:[['D','R','revoke alex@example.com',COL.red],['A','M','tools/call · old token',COL.access],['M','A','401',COL.red]],
+  what:'A grant ends after 14 days, or at once when an admin revokes Alex. Every token that points to it stops working. Alex clicks Allow again, and the SSO groups are read again, so a role change takes effect.',
+  wire:`python admin.py revoke alex@example.com --by admin@example.com
+
+POST /mcp
+Authorization: Bearer wT1OPKOe…   →   401 Unauthorized`,
+  fields:[['14 days','Then Alex clicks Allow again.'],['revoke','Sets revoked:alex@example.com and ends all of Alex’s grants.'],['no expiry','The revoke flag has no TTL, so it can’t lift itself or be evicted.']]},
+];
+
+/* ---------- what-if scenarios ---------- */
+const WHATIF = [
+ {key:'sso', label:'The MCP server is behind SSO', base:1, hold:{}, redis:[], ssoMcp:true,
+  msgs:[['A','MG','POST /mcp',COL.fg],['MG','A','302 → SSO login page (HTML) ✗',COL.red]], act:{A:['expects JSON → fails ✗',COL.red]},
+  what:'This is why the MCP server stays public. Behind the SSO proxy, the agent’s first call gets a redirect to an HTML login page instead of a 401 with JSON. The agent can’t sign in to a web page, so it fails.',
+  wire:`POST /mcp HTTP/1.1
+Host: mcp.example.com
+
+HTTP/1.1 302 Found
+Location: https://sso.example.com/login?…
+Content-Type: text/html`,
+  fields:[['302 + HTML','A page for a person. The agent expected a 401 and JSON.']]},
+ {key:'stolen', label:'Someone steals the code', base:9, hold:{A:['secret','code'],X:['code']}, redis:['client'], attacker:true,
+  msgs:[['X','M','POST /token · stolen code, no secret',COL.code],['M','X','400 invalid_grant ✗',COL.red]], act:{M:['SHA-256(guess) ≠ hash ✗',COL.red]},
+  what:'The code comes back through a URL, and URLs leak. But the code holds the hash, and only the agent has the secret behind it. Without the secret, the code is useless.',
+  wire:`POST /token
+grant_type=authorization_code&code=eyJ…&code_verifier=guess
+
+400 Bad Request
+{"error": "invalid_grant"}`,
+  fields:[['code_verifier','The thief doesn’t have it. SHA-256 can’t be reversed to find it.']]},
+ {key:'twice', label:'The same code is sent twice', base:10, hold:{A:['access','refresh']}, redis:['client','used','grant','access','refresh'],
+  msgs:[['A','M','POST /token · the same code again',COL.code],['M','R','',COL.muted],['M','A','400 invalid_grant ✗',COL.red]], act:{M:['code-used:<jti> exists ✗',COL.red]},
+  what:'The first /token call wrote code-used:<jti> to Redis. Any second use of that code, even within its 60 seconds, is refused.',
+  wire:`POST /token  (same code)
+
+400 Bad Request
+{"error": "invalid_grant",
+ "error_description": "authorization code does not exist"}`,
+  fields:[['jti','The code’s unique ID. The used-marker is keyed on it.']]},
+ {key:'reuse', label:'An old refresh token comes back', base:12, hold:{X:['refresh']}, redis:['client','used'], attacker:true, ended:true,
+  msgs:[['X','M','POST /token · old refresh, 40 s later',COL.refresh],['M','R','',COL.muted],['M','X','400 ✗ · the grant ends',COL.red]], act:{M:['two holders → end the grant',COL.red]},
+  what:'After the 30-second grace, an old refresh token coming back means two parties hold the chain: Alex’s agent and someone who copied it. The server can’t tell which is which, so it ends the whole grant. Alex clicks Allow again; the copy is now worthless.',
+  wire:`POST /token  grant_type=refresh_token  refresh_token=<old>
+  -> 400 invalid_grant          (reuse: the grant ends)
+POST /token  refresh_token=<Alex's newer token>
+  -> 400 invalid_grant          (the whole chain is gone)`,
+  fields:[['reuse','The old token is remembered until the grant ends, so it can be recognised.'],['grant ends','Both sides lose access. Only Alex can get it back, with SSO.']]},
+];
+
+/* ---------- the isometric scene (scene.js, built by build-scene.mjs) ---------- */
+const NS = 'http://www.w3.org/2000/svg';
+const ctx = document.createElement('canvas').getContext('2d');
+function tw(s, size, weight=600){ ctx.font = `${weight} ${size}px Inter`; return ctx.measureText(s).width; }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function el(tag, attrs={}, html=''){ const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (html) e.innerHTML = html; return e; }
+const NAME = {A:'Agent', B:'Browser', M:'MCP server', P:'Allow page', R:'Redis', X:'Someone else', D:'Admin', MG:'SSO gate'};
+const WORD = {secret:'secret', hash:'hash', note:'signed note', code:'code', access:'access token', refresh:'refresh token'};
+const TAG = {client:COL.node, used:COL.code, grant:COL.grant, access:COL.access, refresh:COL.refresh, revoked:COL.red};
+const shade = (hex, f) => { const n = parseInt(hex.slice(1), 16); return '#' + [16, 8, 0].map(b => Math.round(((n >> b) & 255) * f).toString(16).padStart(2, '0')).join(''); };
+function chipSvg(c){
+  const C = SCENE.chip;
+  return `<path d="${C.fill}" fill="${shade(c, .42)}"/>` + C.shades.map((d, i) => d ? `<path d="${d}" fill="${shade(c, [.38, .48, .58, .68][i])}"/>` : '').join('')
+    + `<path d="${C.top}" fill="${c}"/><path d="${C.outline}" fill="none" stroke="#07090D" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`;
+}
+function pillSvg(text, x, y, c, num, centred){
+  const lines = String(text).split('\n'), fs = 17, lh = 22, pad = 26 * !!num;
+  const w = Math.max(...lines.map(l => tw(l, fs))) + 24 + pad, h = lines.length * lh + 10;
+  const x0 = x - w/2, y0 = centred ? y - h/2 : y - h;
+  return `<g class="pill"><rect x="${x0}" y="${y0}" width="${w}" height="${h}" rx="${Math.min(15, h/2)}" fill="#11141B" stroke="${c}" stroke-opacity=".85" stroke-width="1.6"/>`
+    + (num ? `<circle cx="${x0 + 17}" cy="${y0 + h/2}" r="10.5" fill="${c}"/><text x="${x0 + 17}" y="${y0 + h/2 + 4.6}" text-anchor="middle" font-size="13" font-weight="800" fill="#11141B">${num}</text>` : '')
+    + lines.map((l, i) => `<text x="${x0 + 12 + pad}" y="${y0 + 21 + i * lh}" font-size="${fs}" font-weight="600" fill="${c}">${esc(l)}</text>`).join('') + `</g>`;
+}
+let PH = false;                          // phone layout: number badges on the arrows, text in the list
+const PHONE_VB = '150 26 1350 594';
+function phoneBadge(x, y, c, n){ return `<g class="badge"><circle cx="${x}" cy="${y}" r="30" fill="${c}" stroke="#11141B" stroke-width="6"/><text x="${x}" y="${y + 11}" text-anchor="middle" font-size="32" font-weight="800" fill="#11141B">${n}</text></g>`; }
+function badge(x, y, c, n){ return `<g class="badge"><circle cx="${x}" cy="${y}" r="13" fill="${c}" stroke="#11141B" stroke-width="3"/><text x="${x}" y="${y + 5}" text-anchor="middle" font-size="15" font-weight="800" fill="#11141B">${n}</text></g>`; }
+const routeOf = (f, t) => SCENE.routes[`${f}>${t}`];
+const dOf = pts => 'M' + pts.map(p => p.join(' ')).join('L');
+const topOf = pts => pts.reduce((m, p) => p[1] < m[1] ? p : m, pts[0]);
+
+function scene(i, wi){ // i: 0-based step; wi: what-if object or null
+  const st = wi || STEPS[i];
+  const stepNo = wi ? wi.base : i + 1;
+  const prev = wi ? STEPS[wi.base - 1] : (STEPS[i - 1] || {redis: [], hold: {}});
+  const keys = st.redis || [];
+  const dead = st.ended ? ['grant', 'access', 'refresh'] : [];
+  const fresh = keys.filter(k => !(prev.redis || []).includes(k) || (wi && k === 'used' && wi.key === 'twice'));
+  const s = {...st, keys, dead, fresh, admin: !wi && st.ended, hold: st.hold || {}, prevHold: wi ? (STEPS[wi.base - 1].hold || {}) : (prev.hold || {})};
+  return {s, stepNo};
+}
+function numbered(msgs){ let n = 0; return msgs.map(m => m[2] ? ++n : 0); }
+
+function setup(svg){
+  if (svg.querySelector('#scene')) return;
+  svg.innerHTML = `<defs><marker id="ah" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>`
+    + `<g id="scene">${SCENE.svg}${SCENE.labels.map(l => l.small ? `<text x="${l.x}" y="${l.y}" text-anchor="${l.a || 'middle'}" font-size="15" font-weight="600" fill="#A3ABBA">${esc(l.t)}</text>` : `<g class="nm"${l.part ? ` data-label="${l.part}"` : ''}><text x="${l.x}" y="${l.y}" text-anchor="${l.a}" font-size="18" font-weight="700" letter-spacing="2.6" fill="#C9CED8">${esc(l.t)}</text>${l.s ? `<text x="${l.x}" y="${l.y + 21}" text-anchor="${l.a}" font-size="15" fill="#7C8496">${esc(l.s)}</text>` : ''}</g>`).join('')}</g><g id="routes"></g><g id="chips"></g><g id="rlabels"></g><g id="fly"></g><g id="tray"></g>`;
+}
+// arrows stop a clear gap short of each machine's real outline (measured on the drawing once)
+const PARTS = {A:'desk', B:'desk', X:'attacker', M:'mcp', MG:'mcpgate', P:'kiosk', R:'redis', D:'admin'};
+const GAP_START = 10, GAP_END = 16;
+let HIT = null;
+function machineTest(svg){                            // inside(part, [x, y]) in stage units; floors and halos don't count
+  const m = svg.getScreenCTM(); if (!m || !svg.getBoundingClientRect().width) return null;
+  const key = [m.a, m.d, m.e, m.f].map(v => v.toFixed(2)).join();
+  if (HIT && HIT.svg === svg && HIT.key === key) return HIT.inside;
+  const pt = svg.createSVGPoint(), cache = {};
+  const shapes = name => cache[name] ||= [...svg.querySelectorAll(`[data-part="${name}"] path`)]
+    .filter(p => !p.closest('.plate') && !p.classList.contains('iso-halo') && !p.classList.contains('iso-line') && getComputedStyle(p).fill !== 'none')
+    .map(p => ({ p, r: p.getBoundingClientRect(), inv: p.getScreenCTM().inverse() }));
+  const inside = (name, [x, y]) => {
+    pt.x = x; pt.y = y; const c = pt.matrixTransform(m);
+    return shapes(name).some(({ p, r, inv }) => c.x >= r.left && c.x <= r.right && c.y >= r.top && c.y <= r.bottom
+      && p.isPointInFill(new DOMPoint(c.x, c.y).matrixTransform(inv)));
+  };
+  HIT = { svg, key, inside };
+  return inside;
+}
+function trimRoutes(svg){
+  if (SCENE.trimmed) return;
+  const inside = machineTest(svg); if (!inside) return;
+  const along = (pts, need) => {                      // walk 'need' units from pts[0]
+    for (let k = 0; k < pts.length - 1; k++){
+      const a = pts[k], b = pts[k + 1], d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (d >= need) return [[a[0] + (b[0] - a[0]) * need / d, a[1] + (b[1] - a[1]) * need / d], ...pts.slice(k + 1)];
+      need -= d;
+    }
+    return pts;
+  };
+  const cut = (pts, name, gap) => {                   // cut from pts[0] until clear of the part, then the gap
+    let i = 0; while (i < pts.length - 1 && inside(name, pts[i])) i++;
+    if (i >= pts.length - 2) return pts;
+    let a = pts[Math.max(0, i - 1)], b = pts[i];
+    if (i > 0) for (let n = 0; n < 8; n++){ const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; inside(name, mid) ? a = mid : b = mid; }
+    return along([b, ...pts.slice(i + 1)], gap);
+  };
+  for (const key of Object.keys(SCENE.routes)){
+    const [f, t] = key.split('>');
+    if (PARTS[f] && PARTS[f] === PARTS[t]) continue;  // window to window: already drawn clear of the lid
+    let pts = SCENE.routes[key];
+    if (PARTS[f]) pts = cut(pts, PARTS[f], GAP_START);
+    if (PARTS[t]) pts = cut([...pts].reverse(), PARTS[t], GAP_END).reverse();
+    SCENE.routes[key] = pts.map(p => p.map(v => +v.toFixed(1)));
+  }
+  SCENE.trimmed = true;
+}
+function applyState(svg, s, stepNo, wi, phase){ // phase: 'start' | 'end'
+  const part = n => svg.querySelector(`[data-part="${n}"]`);
+  part('attacker').style.opacity = s.attacker ? 1 : 0;
+  svg.querySelectorAll('[data-label]').forEach(g => g.style.opacity = (g.dataset.label === 'attacker' ? s.attacker : s.admin) ? 1 : 0);
+  part('admin').style.opacity = s.admin ? 1 : 0;
+  part('mcpgate').style.opacity = s.ssoMcp ? 1 : 0;
+  const open = !!s.gate && phase === 'end' || (!!s.gate && phase === 'mid');
+  svg.querySelector('[data-gate="open"]').style.opacity = open ? 1 : 0;
+  svg.querySelector('[data-gate="closed"]').style.opacity = open ? 0 : 1;
+  svg.querySelector('[data-part="yard"] .lamp').classList.toggle('on', open);
+  const allow = !wi && stepNo >= 7 && stepNo <= 9 && !(stepNo === 7 && phase === 'start');
+  part('browser-allow').style.opacity = allow ? 1 : 0;
+  part('browser-blank').style.opacity = allow ? 0 : 1;
+  part('allow-btn').classList.toggle('pressed', !wi && stepNo === 9);
+  for (const name of SCENE.drawers){
+    const has = phase === 'start' ? (s.keys.includes(name) && !s.fresh.includes(name)) : s.keys.includes(name);
+    const isDead = phase !== 'start' && s.dead.includes(name);
+    svg.querySelector(`[data-tag="${name}"]`).style.fill = has && !isDead ? TAG[name] : 'transparent';
+    const out = phase !== 'start' && (s.fresh.includes(name) || (isDead && name === 'grant'));
+    const dr = svg.querySelector(`[data-drawer="${name}"]`);
+    dr.querySelector('[data-state="open"]').style.opacity = out ? 1 : 0;
+    dr.querySelector('[data-state="closed"]').style.opacity = out ? 0 : 1;
+  }
+  part('cables').classList.toggle('flow', phase !== 'start' && (s.msgs || []).some(m => m[1] === 'R'));
+}
+function drawChips(svg, hold){
+  let h = '';
+  for (const [node, toks] of Object.entries(hold)){
+    toks.forEach((t, k) => {
+      const [dx, dy] = SCENE.spots[node][k], c = SCENE.chip.centre;
+      const cx = dx + c[0] + SCENE.origin[0], cy = dy + c[1] + SCENE.origin[1];
+      h += `<g class="chip"><g transform="translate(${dx} ${dy})">${chipSvg(COL[t])}</g>`
+        + `<text x="${k ? cx + 4 : cx - 4}" y="${cy + 30}" text-anchor="${k ? 'start' : 'end'}" font-size="15" font-weight="700" fill="${COL[t]}" paint-order="stroke" stroke="#11141B" stroke-width="4">${esc(WORD[t])}</text></g>`;
+    });
+  }
+  svg.querySelector('#chips').innerHTML = h;
+}
+// an arrow, and its message label sitting on the arc's highest point
+const pathSvg = (pts, c, dashed) => `<path d="${dOf(pts)}" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round" ${dashed ? 'stroke-dasharray="2 7"' : ''} marker-end="url(#ah)" opacity=".95"/>`;
+const pillSize = (label, num) => { if (PH) return { w: 66, h: 66 }; const lines = String(label).split('\n'); return { w: Math.max(...lines.map(l => tw(l, 17))) + 24 + 26 * !!num, h: lines.length * 22 + 10 }; };
+// where each label sits: the arc's highest point, moved down or up until it covers no earlier label
+// the machine names in the scene, as boxes the arrow labels must not cover
+function nameBoxes(s){
+  const out = [];
+  for (const l of SCENE.labels){
+    if (l.part && !(l.part === 'attacker' ? s.attacker : s.admin)) continue;
+    if (l.small && PH) continue;
+    const fs = l.small ? 15 : (PH ? 32 : 18), ls = l.small ? 0 : (PH ? 3 : 2.6), sub = l.s && !PH;
+    const w = Math.max(tw(l.t, fs, l.small ? 600 : 700) + ls * l.t.length, sub ? tw(l.s, 15, 400) : 0);
+    const up = fs * 0.8, down = sub ? 25 : fs * 0.25;
+    const x0 = l.a === 'end' ? l.x - w : l.a === 'start' ? l.x : l.x - w / 2;
+    out.push({ x: x0 + w / 2, y: l.y + (down - up) / 2, w, h: up + down });
+  }
+  return out;
+}
+function placeLabels(msgs, nums, s, svg){
+  const placed = s ? nameBoxes(s) : [];
+  for (const [f, t] of msgs) for (const p of routeOf(f, t)) placed.push({ x: p[0], y: p[1], w: 2, h: 2 });   // labels never cover an arrow
+  const inside = svg && machineTest(svg);
+  const parts = ['desk', 'mcp', 'redis', 'yard'].concat(s && s.attacker ? ['attacker'] : [], s && s.admin ? ['admin'] : [], s && s.ssoMcp ? ['mcpgate'] : []);
+  const onMachine = (x, y, w, h) => inside && [-.5, 0, .5].some(u => [-.5, 0, .5].some(v => parts.some(n => inside(n, [x + u * w, y + v * h]))));
+  const free = (x, y, w, h) => !placed.some(b => Math.abs(b.x - x) < (b.w + w) / 2 + 8 && Math.abs(b.y - y) < (b.h + h) / 2 + 6) && !onMachine(x, y, w, h);
+  const tries = [];
+  for (let dy = -150; dy <= 150; dy += 6) for (let dx = -160; dx <= 160; dx += 20) tries.push([dx, dy, Math.abs(dx) * .6 + Math.abs(dy) + (dy > 0 ? 3 : 0)]);
+  tries.sort((a, b) => a[2] - b[2]);                 // nearest first, above before below
+  return msgs.map(([f, t, label], k) => {
+    if (!label) return null;
+    const top = topOf(routeOf(f, t)), { w, h } = pillSize(label, nums[k]);
+    const y0 = top[1] - h / 2 - 7;                  // just above the arc's highest point
+    const hit = tries.find(([dx, dy]) => free(top[0] + dx, y0 + dy, w, h)) || [0, 0];
+    const at = [top[0] + hit[0], y0 + hit[1]];
+    placed.push({ x: at[0], y: at[1], w, h });
+    return at;
+  });
+}
+const labelSvg = (at, c, n, label) => at && label ? (PH ? phoneBadge(at[0], at[1], c, n) : pillSvg(label, at[0], at[1], c, n, true)) : '';
+function caption(s, nums){
+  const items = [];
+  (s.click || []).forEach(([node, , word]) => items.push(`<li class="click" style="--c:#FF444F"><em>●</em><div><span>Alex</span>clicks <b>${esc(word)}</b></div></li>`));
+  (s.msgs || []).forEach(([f, t, label, c], k) => { if (label) items.push(`<li data-n="${nums[k]}" style="--c:${c}"><em>${nums[k]}</em><div title="${esc(label)}"><span>${NAME[f]} → ${NAME[t]}</span>${esc(label).replace(/\n/g, ' · ')}</div></li>`); });
+  for (const [node, [text, c]] of Object.entries(s.act || {})) items.push(`<li class="act" style="--c:${c}"><em>▸</em><div><span>${NAME[node]}</span>${esc(text)}</div></li>`);
+  return items.join('');
+}
+function tokState(t, stepNo, s){
+  let st = stepNo < t.born ? 'later' : (stepNo >= t.dead ? t.deadWord : 'live');
+  if (s.ended && stepNo >= t.born && ['access','refresh','grant'].includes(t.id)) st = 'ended';
+  if (t.renew && s.renew && st === 'live') st = 'new';
+  return st;
+}
+function trayHtml(stepNo, s){
+  return `<b>Every token in this flow</b><ul>` + TOK.map(t => {
+    const st = tokState(t, stepNo, s), cls = st === 'later' ? 'later' : (st === 'live' || st === 'new' ? 'live' : 'gone');
+    return `<li class="${cls}" style="--c:${COL[t.id]}"><i></i><span>${esc(t.name)}</span>${st === 'later' ? '' : `<small>${esc(st.toUpperCase())}</small>`}</li>`;
+  }).join('') + `</ul>`;
+}
+function drawTray(stepNo, s){
+  let h = `<text x="30" y="612" font-size="14" font-weight="700" fill="${COL.muted}" letter-spacing=".14em">EVERY TOKEN IN THIS FLOW</text>`;
+  TOK.forEach((t, i) => {
+    const x = 30 + i*222, y = 626, w = 208, ht = 128, c = COL[t.id];
+    const st = tokState(t, stepNo, s);
+    const dim = st === 'later' ? .3 : (st === 'live' || st === 'new' ? 1 : .5);
+    const strike = !['later','live','new'].includes(st);
+    h += `<g opacity="${dim}"><rect x="${x}" y="${y}" width="${w}" height="${ht}" rx="12" fill="${st === 'live' || st === 'new' ? c : '#1E2330'}" fill-opacity="${st === 'live' || st === 'new' ? .10 : 1}" stroke="${c}" stroke-opacity="${st === 'later' ? .5 : .8}" stroke-width="1.6"${st === 'later' ? ' stroke-dasharray="5 5"' : ''}/>`
+      + `<circle cx="${x+18}" cy="${y+24}" r="6" fill="${c}"/>`
+      + `<text x="${x+32}" y="${y+30}" font-size="19" font-weight="700" fill="${c}"${strike ? ' text-decoration="line-through"' : ''}>${esc(t.name)}</text>`
+      + `<text x="${x+18}" y="${y+113}" font-size="12.5" font-weight="700" letter-spacing=".08em" fill="${st === 'live' || st === 'new' ? c : COL.muted}">${st === 'later' ? '' : esc(st.toUpperCase())}</text>`
+      + `<text x="${x+18}" y="${y+60}" font-size="17" font-weight="600" fill="${COL.fg}">${esc(t.life)}</text>`
+      + `<text x="${x+18}" y="${y+90}" font-size="16" fill="${COL.muted}">${esc(t.short)}</text></g>`;
+  });
+  return h;
+}
+
+
+let RUN = 0;
+function render(svg, i, wi, animate){
+  setup(svg); trimRoutes(svg);
+  const {s, stepNo} = scene(i, wi);
+  const msgs = s.msgs || [], nums = numbered(msgs);
+  svg.querySelector('#tray').innerHTML = drawTray(stepNo, s);
+  const ptray = document.getElementById('ptray');
+  if (ptray) ptray.innerHTML = trayHtml(stepNo, s);
+  const cap = document.getElementById('cap');
+  if (cap) cap.innerHTML = caption(s, nums);
+  const routes = svg.querySelector('#routes'), labels = svg.querySelector('#rlabels'), fly = svg.querySelector('#fly');
+  const run = ++RUN;                       // a newer render cancels this one
+  const spots = placeLabels(msgs, nums, s, svg);
+  fly.innerHTML = ''; labels.innerHTML = '';
+  if (!animate){
+    applyState(svg, s, stepNo, wi, 'end');
+    routes.innerHTML = msgs.map(([f, t, label, c]) => pathSvg(routeOf(f, t), c, !label)).join('');
+    labels.innerHTML = msgs.map(([f, t, label, c], k) => labelSvg(spots[k], c, nums[k], label)).join('');
+    drawChips(svg, s.hold);
+    return Promise.resolve();
+  }
+  applyState(svg, s, stepNo, wi, 'start');
+  routes.innerHTML = '';
+  drawChips(svg, s.prevHold);
+  const token = { [COL.secret]:'secret', [COL.hash]:'hash', [COL.note]:'note', [COL.code]:'code', [COL.access]:'access', [COL.refresh]:'refresh' };
+  const live = () => run === RUN;
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  return (async () => {
+    if ((s.click || []).length){
+      const [node] = s.click[0], [x, y] = SCENE.anchors[node];
+      fly.innerHTML = `<circle class="tap" cx="${x}" cy="${y}" r="8" fill="none" stroke="#FF444F" stroke-width="3"/>`;
+      await wait(500);
+      if (!live()) return;
+      fly.innerHTML = '';
+    }
+    if (s.gate) applyState(svg, s, stepNo, wi, 'mid');
+    for (let k = 0; k < msgs.length; k++){
+      const [f, t, label, c] = msgs[k], pts = routeOf(f, t);
+      cap && cap.querySelectorAll('li').forEach(li => li.classList.toggle('now', li.dataset.n == nums[k]));
+      const path = el('path', {d: dOf(pts), fill:'none', stroke:c, 'stroke-width':3, 'stroke-linecap':'round', opacity:.95});
+      routes.append(path);
+      const len = path.getTotalLength();
+      path.style.strokeDasharray = len; path.style.strokeDashoffset = len;
+      const cx = SCENE.chip.centre[0] + SCENE.origin[0], cy = SCENE.chip.centre[1] + SCENE.origin[1];
+      const mover = el('g', {}, (token[c] ? chipSvg(c) : `<circle cx="${cx}" cy="${cy}" r="9" fill="${c}" stroke="#07090D" stroke-width="2"/>`)
+        + (label ? (PH ? phoneBadge(cx, cy - 46, c, nums[k]) : pillSvg(label, cx, cy - 20, c, nums[k])) : ''));
+      fly.append(mover);
+      const t0 = performance.now(), D = Math.max(900, len * 1.6);
+      await new Promise(done => {
+        const tick = now => {
+          if (!live()) return done();
+          const u = Math.min(1, (now - t0) / D), e = u < .5 ? 2*u*u : 1 - Math.pow(-2*u + 2, 2)/2;
+          const pt = path.getPointAtLength(e * len);
+          mover.setAttribute('transform', `translate(${(pt.x - cx).toFixed(1)} ${(pt.y - cy).toFixed(1)})`);
+          path.style.strokeDashoffset = len * (1 - e);
+          u < 1 ? requestAnimationFrame(tick) : done();
+        };
+        requestAnimationFrame(tick);
+      });
+      if (!live()) return;
+      mover.remove(); path.remove();
+      routes.insertAdjacentHTML('beforeend', pathSvg(pts, c, !label));
+      labels.insertAdjacentHTML('beforeend', labelSvg(spots[k], c, nums[k], label));   // the label stays on its arrow
+      if (t === 'R') applyState(svg, s, stepNo, wi, 'end');
+      if (k < msgs.length - 1) await wait(350);   // short gap between messages, none after the last
+      if (!live()) return;
+    }
+    cap && cap.querySelectorAll('li').forEach(li => li.classList.remove('now'));
+    applyState(svg, s, stepNo, wi, 'end');
+    drawChips(svg, s.hold);
+  })();
+}
+
+/* ---------- frame mode (stills for the article) ---------- */
+const q = new URLSearchParams(location.search);
+if (q.has('frame')){
+  const i = +q.get('frame') - 1, wi = q.get('whatif') ? WHATIF.find(w => w.key === q.get('whatif')) : null;
+  const st = wi || STEPS[i];
+  document.body.className = 'frame';
+  document.body.innerHTML = `<div class="top">${document.querySelector('.brand').outerHTML}<div class="tag">MCP without API keys</div></div>
+    <div class="kick">${wi ? 'What if' : `Step ${i + 1} of ${STEPS.length}`}</div><h1>${esc(wi ? wi.label : st.title)}</h1>
+    <div class="fstage"><ol id="cap" class="cap"></ol><svg id="stage" viewBox="0 0 1600 760"></svg></div>`;
+  document.fonts.ready.then(() => render(document.getElementById('stage'), i, wi, false));
+} else {
+  /* ---------- interactive page ---------- */
+  const svg = document.getElementById('stage-i');
+  let cur = 0, wi = null, busy = false;
+  const phoneQ = matchMedia('(max-width:700px)');
+  const setPhone = () => { PH = phoneQ.matches; document.body.classList.toggle('phone', PH); svg.setAttribute('viewBox', PH ? PHONE_VB : '0 0 1600 760'); };
+  setPhone();
+  phoneQ.addEventListener('change', () => { setPhone(); wi ? what(wi) : go(cur, false); });
+  const toTop = () => { if (PH && scrollY > 0) scrollTo({top: 0, behavior: 'smooth'}); };
+  const dots = document.getElementById('dots');
+  STEPS.forEach((s, i) => { const b = document.createElement('button'); b.textContent = i + 1; b.title = s.title; b.onclick = () => go(i, true); dots.append(b); });
+  const wbox = document.getElementById('wbtns');
+  WHATIF.forEach(w => { const b = document.createElement('button'); b.textContent = w.label; b.dataset.key = w.key; b.onclick = () => what(w); wbox.append(b); });
+  function detail(st, kick){
+    document.getElementById('d-k').textContent = kick;
+    document.getElementById('d-title').textContent = st.title || st.label;
+    document.getElementById('d-what').textContent = st.what;
+    document.getElementById('d-wire').textContent = st.wire;
+    document.getElementById('d-fields').innerHTML = st.fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
+  }
+  function mark(){
+    [...dots.children].forEach((b, k) => b.classList.toggle('on', !wi && k === cur));
+    [...wbox.querySelectorAll('button')].forEach(b => b.classList.toggle('on', wi && b.dataset.key === wi.key));
+  }
+  async function go(i, anim){
+    cur = Math.max(0, Math.min(STEPS.length - 1, i)); wi = null; mark();
+    detail(STEPS[cur], `Step ${cur + 1} of ${STEPS.length}`); toTop();
+    busy = true; await render(svg, cur, null, anim); busy = false;
+  }
+  async function what(w){
+    wi = w; mark(); detail(w, 'What if'); toTop();
+    busy = true; await render(svg, 0, w, true); busy = false;
+  }
+  document.getElementById('prev').onclick = () => go(wi ? cur : cur - 1, true);
+  document.getElementById('next').onclick = () => go(wi ? cur : cur + 1, true);
+  document.getElementById('play').onclick = () => wi ? what(wi) : go(cur, true);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight') go(cur + 1, true);
+    if (e.key === 'ArrowLeft') go(cur - 1, true);
+    if (e.key === ' ' && e.target === document.body) { e.preventDefault(); document.getElementById('play').click(); }
+  });
+  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+    document.getElementById('d-fields').hidden = b.dataset.tab !== 'fields';
+    document.getElementById('d-wire').hidden = b.dataset.tab !== 'wire';
+  });
+  document.fonts.ready.then(() => go(0, true));
+}
+</script>
+</body></html>
